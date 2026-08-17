@@ -12,7 +12,7 @@ interface Props {
   onAudit: () => void;
   onPlan: (aiGenerateStrategy: boolean, aiGenerateDetector: boolean) => void;
   onApprove: () => void;
-  onInitialize: () => void;
+  onInitialize: (hypothesisId: string) => void;
   onExecuteNext: (guidance: string) => Promise<boolean>;
   onReviewRound: () => void;
   onFinalize: () => void;
@@ -208,6 +208,13 @@ export function ExperimentCampaignPanel({
   const currentHypothesis = campaign
     ? project.hypotheses.find(h => h.id === campaign.hypothesis_id)
     : undefined;
+  const approvedHypothesisIds = new Set(project.experiment_plan?.hypothesis_ids ?? []);
+  const completedHypothesisIds = new Set([
+    ...project.experiment_campaign_history
+      .filter((item) => item.status === "completed")
+      .map((item) => item.hypothesis_id),
+    ...(campaign?.status === "completed" ? [campaign.hypothesis_id] : []),
+  ]);
 
   async function executeWithGuidance() {
     const succeeded = await onExecuteNext(executionGuidance.trim());
@@ -289,6 +296,87 @@ export function ExperimentCampaignPanel({
         </div>
       </div>
 
+      <div className="validation-portfolio">
+        <div className="section-title">
+          <h4>创新点实验验证队列</h4>
+          <span>一个创新点 · 一套指导 · 一组结果</span>
+        </div>
+        <div className="validation-track-grid">
+          {project.hypotheses.map((hypothesis, index) => {
+            const isCurrent = campaign?.hypothesis_id === hypothesis.id;
+            const isCompleted = completedHypothesisIds.has(hypothesis.id);
+            const isApproved = approvedHypothesisIds.has(hypothesis.id);
+            const trackCampaign = [
+              ...project.experiment_campaign_history,
+              ...(campaign ? [campaign] : []),
+            ].filter((item) => item.hypothesis_id === hypothesis.id).at(-1);
+            const trackSummary = trackCampaign?.rounds.at(-1)?.result_summary;
+            const trackPairs = trackSummary
+              ? numberFrom(trackSummary.cumulative_pair_count)
+                ?? numberFrom(trackSummary.pair_count)
+              : null;
+            const trackEffect = trackSummary?.cumulative_primary_summary
+              && typeof trackSummary.cumulative_primary_summary === "object"
+              ? numberFrom(
+                (trackSummary.cumulative_primary_summary as Record<string, unknown>)
+                  .mean_difference,
+              )
+              : null;
+            const canStart = Boolean(
+              audit?.verified
+              && project.stage === "experiments_queued"
+              && hypothesis.execution_readiness === "executable"
+              && isApproved
+              && !isCompleted
+              && (!campaign || campaign.status === "completed"),
+            );
+            const state = isCompleted
+              ? "已完成实验"
+              : isCurrent
+                ? "正在验证"
+                : hypothesis.execution_readiness === "requires_implementation"
+                  ? "需要先实现方法"
+                  : isApproved
+                    ? "已预注册，等待实验"
+                    : "候选，尚未批准";
+            return (
+              <article className={`validation-track ${isCurrent ? "current" : ""}`} key={hypothesis.id}>
+                <div className="validation-track-head">
+                  <b>创新点 H{index + 1}</b>
+                  <span>{state}</span>
+                </div>
+                <h5>{hypothesis.title}</h5>
+                <p>{hypothesis.claim}</p>
+                <div className="contract-line">
+                  {hypothesis.analysis_contract
+                    ? `${hypothesis.analysis_contract.treatment} vs ${hypothesis.analysis_contract.control} · ${hypothesis.analysis_contract.metric}`
+                    : "尚无实验契约"}
+                </div>
+                <details>
+                  <summary>查看该创新点的实验指导</summary>
+                  <ol>
+                    {hypothesis.experiment_guidance.map((item) => <li key={item}>{item}</li>)}
+                  </ol>
+                </details>
+                {isCompleted && (
+                  <div className="track-result">
+                    <b>独立实验结果</b>
+                    <span>有效配对 {trackPairs ?? "—"}</span>
+                    <span>主效应 Δ {trackEffect?.toFixed(4) ?? "—"}</span>
+                    <small>完整指标和失败记录保留在该创新点对应的实验轮次中。</small>
+                  </div>
+                )}
+                {canStart && (
+                  <button disabled={busy} onClick={() => onInitialize(hypothesis.id)}>
+                    选择该创新点并启动真实实验
+                  </button>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </div>
+
       {!audit ? (
         <div className="campaign-setup">
           <div>
@@ -350,14 +438,8 @@ export function ExperimentCampaignPanel({
               {busy ? "正在批准…" : "批准预注册实验并冻结边界"}
             </button>
           )}
-          {project.stage === "experiments_queued" && (
-            <button disabled={busy || !audit.verified} onClick={onInitialize}>
-              {busy ? "正在构建首轮…" : "启动自适应实验闭环"}
-            </button>
-          )}
           <small>
-            完整顺序：数据审计 → 预注册 → 人工批准 → 首轮真实实验；默认首轮为
-            bottle · K=2 · seeds 0/1 · random 对照 k-center。
+            数据审计完成后，请在上方验证队列中明确选择一个已预注册的创新点启动实验。
           </small>
         </div>
       ) : (

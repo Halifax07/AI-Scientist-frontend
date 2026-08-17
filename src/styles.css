@@ -303,6 +303,42 @@ aside { padding: 18px; align-self: start; }
 .loop-rail .active { border-color: #5e9e7e; box-shadow: inset 0 0 0 1px #a5cbb8; }
 .loop-rail .active span { color: #fff; border-color: #176c4a; background: #176c4a; }
 
+.validation-portfolio { margin: 20px 0; }
+.validation-track-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.validation-track {
+  padding: 16px;
+  border: 1px solid #dfe7e2;
+  border-radius: 11px;
+  background: #fff;
+}
+.validation-track.current { border-color: #5e9e7e; box-shadow: inset 0 0 0 1px #b6d6c6; }
+.validation-track-head { display: flex; justify-content: space-between; gap: 12px; }
+.validation-track-head b { color: #176c4a; font-size: 12px; }
+.validation-track-head span { color: #7a6a3a; font-size: 11px; }
+.validation-track h5 { margin: 10px 0 6px; font-size: 15px; line-height: 1.45; }
+.validation-track > p { margin: 0 0 10px; color: #64736b; font-size: 12px; line-height: 1.55; }
+.contract-line { padding: 8px 10px; border-radius: 7px; color: #315544; background: #eff6f2; font: 11px Consolas, monospace; }
+.validation-track details { margin: 10px 0; color: #526159; font-size: 12px; }
+.validation-track details ol { padding-left: 20px; line-height: 1.6; }
+.validation-track button { width: 100%; }
+.track-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 8px;
+  color: #315544;
+  background: #edf6f1;
+  font-size: 11px;
+}
+.track-result b { width: 100%; }
+.track-result small { width: 100%; color: #6c7972; }
+
 .campaign-setup {
   display: grid;
   grid-template-columns: minmax(260px, 1.2fr) minmax(360px, 1fr);
@@ -576,6 +612,7 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
   .run-table { overflow-x: auto; }
   .run-row { min-width: 780px; }
   .loop-rail { grid-template-columns: repeat(2, 1fr); }
+  .validation-track-grid { grid-template-columns: 1fr; }
   .loop-rail > div:nth-child(2)::after { display: none; }
   .campaign-setup { grid-template-columns: 1fr; }
   .campaign-setup label, .path-action { grid-column: 1; }

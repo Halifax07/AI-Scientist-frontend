@@ -420,12 +420,13 @@ export default function App() {
                     ))
                   }
                   onApprove={() => execute(() => approveWithRequiredMethods(project))}
-                  onInitialize={() => {
+                  onInitialize={(hypothesisId) => {
                     const manifestPath = project.dataset_audits.at(-1)?.manifest_path;
                     if (manifestPath) {
                       void execute(() => api.initializeCampaign(
                         project.id,
                         manifestPath,
+                        hypothesisId,
                         preferredCampaignDetector(project),
                       ));
                     }

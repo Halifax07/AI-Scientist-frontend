@@ -61,6 +61,8 @@ export interface Hypothesis {
   analysis_contract: AnalysisContract | null;
   revision: number;
   parent_hypothesis_id: string | null;
+  execution_readiness: "executable" | "requires_implementation";
+  experiment_guidance: string[];
 }
 
 export interface ExperimentPlan {
