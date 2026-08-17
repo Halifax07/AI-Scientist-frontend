@@ -7,6 +7,8 @@ interface Props {
   datasetPath: string;
   setDatasetPath: (value: string) => void;
   onAudit: () => void;
+  onPlan: () => void;
+  onApprove: () => void;
   onInitialize: () => void;
   onExecuteNext: (guidance: string) => Promise<boolean>;
   onReviewRound: () => void;
@@ -34,6 +36,8 @@ export function ExperimentCampaignPanel({
   datasetPath,
   setDatasetPath,
   onAudit,
+  onPlan,
+  onApprove,
   onInitialize,
   onExecuteNext,
   onReviewRound,
@@ -148,10 +152,25 @@ export function ExperimentCampaignPanel({
             <span><b>{audit.counts.ground_truth_mask ?? 0}</b>掩码</span>
             <span><b>{audit.issue_count}</b>问题</span>
           </div>
-          <button disabled={busy || !audit.verified} onClick={onInitialize}>
-            {busy ? "正在构建首轮…" : "启动自适应实验闭环"}
-          </button>
-          <small>默认首轮：bottle · K=2 · seeds 0/1 · random 对照 k-center，共 4 次真实运行。</small>
+          {project.stage === "hypotheses_reviewed" && (
+            <button disabled={busy || !audit.verified} onClick={onPlan}>
+              {busy ? "正在生成预注册…" : "基于当前假设与数据生成预注册实验"}
+            </button>
+          )}
+          {project.stage === "awaiting_experiment_approval" && (
+            <button disabled={busy || !audit.verified} onClick={onApprove}>
+              {busy ? "正在批准…" : "批准预注册实验并冻结边界"}
+            </button>
+          )}
+          {project.stage === "experiments_queued" && (
+            <button disabled={busy || !audit.verified} onClick={onInitialize}>
+              {busy ? "正在构建首轮…" : "启动自适应实验闭环"}
+            </button>
+          )}
+          <small>
+            完整顺序：数据审计 → 预注册 → 人工批准 → 首轮真实实验；默认首轮为
+            bottle · K=2 · seeds 0/1 · random 对照 k-center。
+          </small>
         </div>
       ) : (
         <>

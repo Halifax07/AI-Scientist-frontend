@@ -169,16 +169,24 @@ export default function App() {
               <p>{project.spec.objective} · Research cycle {project.research_cycle}</p>
             </div>
             <div className="actions">
-              {project.spec.datasets.length === 0 && project.stage === "hypotheses_reviewed" ? (
-                <button
-                  onClick={() => {
-                    setProject(null);
-                    setResearchPrompt("");
-                    setError(null);
-                  }}
-                >
-                  提出另一个研究问题
-                </button>
+              {project.stage === "hypotheses_reviewed" ? (
+                <>
+                  <button
+                    onClick={() => document.getElementById("experiment-entry")?.scrollIntoView({ behavior: "smooth" })}
+                  >
+                    接入数据并验证假设
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      setProject(null);
+                      setResearchPrompt("");
+                      setError(null);
+                    }}
+                  >
+                    提出另一个研究问题
+                  </button>
+                </>
               ) : project.stage === "awaiting_experiment_approval" ? (
                 <button disabled={busy} onClick={() => execute(() => api.approve(project.id))}>
                   批准预注册实验
@@ -195,8 +203,8 @@ export default function App() {
               )}
               <span className="next-action">
                 下一步：
-                {project.spec.datasets.length === 0 && project.stage === "hypotheses_reviewed"
-                  ? "本轮无数据创新分析已完成；可新建问题或稍后接入数据验证"
+                {project.stage === "hypotheses_reviewed"
+                  ? "接入并审计 MVTec 数据，生成预注册实验验证当前假设"
                   : needsRevisionDecision
                     ? "重大决策：修订当前假设并投入下一轮实验预算"
                   : project.next_action}
@@ -281,8 +289,9 @@ export default function App() {
             <article><strong>{project.runs.length}</strong><span>实验节点</span></article>
           </section>
 
-          {project.spec.datasets.length > 0 &&
-            (project.stage === "experiments_queued" || project.experiment_campaign) && (
+          {(["hypotheses_reviewed", "awaiting_experiment_approval", "experiments_queued"].includes(project.stage)
+            || project.experiment_campaign) && (
+              <div id="experiment-entry">
               <>
                 <ExperimentCampaignPanel
                   project={project}
@@ -290,6 +299,8 @@ export default function App() {
                   datasetPath={datasetPath}
                   setDatasetPath={setDatasetPath}
                   onAudit={() => execute(() => api.auditDataset(project.id, datasetPath))}
+                  onPlan={() => execute(() => api.advance(project.id))}
+                  onApprove={() => execute(() => api.approve(project.id))}
                   onInitialize={() => {
                     const manifestPath = project.dataset_audits.at(-1)?.manifest_path;
                     if (manifestPath) {
@@ -302,6 +313,7 @@ export default function App() {
                 />
                 {runNotice && <p className="run-notice">{runNotice}</p>}
               </>
+              </div>
             )}
 
           <div className="columns">
