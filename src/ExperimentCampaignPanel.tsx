@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MethodSourcePanel } from "./MethodSourcePanel";
 import type { Project } from "./types";
 
 interface Props {
@@ -7,7 +8,7 @@ interface Props {
   datasetPath: string;
   setDatasetPath: (value: string) => void;
   onAudit: () => void;
-  onPlan: () => void;
+  onPlan: (aiGenerateStrategy: boolean, aiGenerateDetector: boolean) => void;
   onApprove: () => void;
   onInitialize: () => void;
   onExecuteNext: (guidance: string) => Promise<boolean>;
@@ -46,6 +47,8 @@ export function ExperimentCampaignPanel({
   const [executionGuidance, setExecutionGuidance] = useState(
     "按预注册约束和系统优先级执行，并优先选择当前信息增益最高的任务。",
   );
+  const [aiGenerateStrategy, setAiGenerateStrategy] = useState(false);
+  const [aiGenerateDetector, setAiGenerateDetector] = useState(false);
   const audit = project.dataset_audits.at(-1) ?? null;
   const campaign = project.experiment_campaign;
   const campaignRuns = project.runs.filter((run) => run.round_id !== null);
@@ -153,8 +156,26 @@ export function ExperimentCampaignPanel({
             <span><b>{audit.issue_count}</b>问题</span>
           </div>
           {project.stage === "hypotheses_reviewed" && (
-            <button disabled={busy || !audit.verified} onClick={onPlan}>
-              {busy ? "正在生成预注册…" : "基于当前假设与数据生成预注册实验"}
+            <MethodSourcePanel
+              busy={busy}
+              aiGenerateStrategy={aiGenerateStrategy}
+              aiGenerateDetector={aiGenerateDetector}
+              onStrategyChange={setAiGenerateStrategy}
+              onDetectorChange={setAiGenerateDetector}
+            />
+          )}
+          {project.stage === "hypotheses_reviewed" && (
+            <button
+              disabled={busy || !audit.verified}
+              onClick={() => onPlan(aiGenerateStrategy, aiGenerateDetector)}
+            >
+              {busy
+                ? aiGenerateStrategy || aiGenerateDetector
+                  ? "正在处理实验方法并生成预注册…"
+                  : "正在生成预注册…"
+                : aiGenerateStrategy || aiGenerateDetector
+                  ? "按「AI 生成替代」设置生成预注册实验"
+                  : "基于当前假设与数据生成预注册实验"}
             </button>
           )}
           {project.stage === "awaiting_experiment_approval" && (

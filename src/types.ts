@@ -34,6 +34,15 @@ export interface EvidenceRecord {
   verification_scope: "none" | "bibliographic" | "claim";
 }
 
+export interface AnalysisContract {
+  kind: "selection_main_effect" | "detector_interaction" | "query_adaptation";
+  metric: string;
+  treatment: string;
+  control: string;
+  alpha?: number;
+  minimum_pairs?: number;
+}
+
 export interface Hypothesis {
   id: string;
   title: string;
@@ -42,6 +51,7 @@ export interface Hypothesis {
   falsification_conditions: string[];
   status: string;
   score: HypothesisScore | null;
+  analysis_contract: AnalysisContract | null;
 }
 
 export interface ExperimentPlan {
@@ -227,6 +237,17 @@ export interface InnovationCandidate {
   status: string;
 }
 
+export interface MethodImplementation {
+  id: string;
+  kind: "selection_strategy" | "detector";
+  name: string;
+  hypothesis_id: string;
+  status: "draft" | "validated" | "approved" | "rejected";
+  code_digest: string;
+  static_validation?: { passed: boolean; issues?: string[] } | null;
+  smoke_result?: { passed: boolean; summary?: string } | null;
+}
+
 export interface Project {
   id: string;
   spec: {
@@ -251,6 +272,7 @@ export interface Project {
   guidance_records: UserGuidanceRecord[];
   findings: AnalysisFinding[];
   innovations: InnovationCandidate[];
+  method_implementations?: MethodImplementation[];
   events: WorkflowEvent[];
 }
 

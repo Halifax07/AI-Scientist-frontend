@@ -61,6 +61,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ root, dataset_name: "MVTec AD" }),
     }),
+  generateSelectionStrategy: (projectId: string, hypothesisId: string) =>
+    request<Project>(`/api/v1/projects/${projectId}/experiment-methods/generate`, {
+      method: "POST",
+      body: JSON.stringify({ hypothesis_id: hypothesisId }),
+    }),
+  generateDetector: (projectId: string, hypothesisId: string, nameStem: string) =>
+    request<Project>(`/api/v1/projects/${projectId}/experiment-methods/generate-detector`, {
+      method: "POST",
+      body: JSON.stringify({ hypothesis_id: hypothesisId, name_stem: nameStem }),
+    }),
   initializeCampaign: (projectId: string, datasetManifestPath: string) =>
     request<Project>(`/api/v1/projects/${projectId}/experiment-campaign/initialize`, {
       method: "POST",

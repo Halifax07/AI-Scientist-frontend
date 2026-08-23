@@ -3,6 +3,31 @@ import { api } from "./api";
 import { ExperimentCampaignPanel } from "./ExperimentCampaignPanel";
 import type { Health, Project, Stage } from "./types";
 
+/**
+ * 勾选了“让 AI 生成”时，点击「生成预注册实验」调用生成接口，
+ * 用 AI 实现替代代码库的 random / k-center / AnomalyDINO 等方法：
+ * - 选样方法：POST /experiment-methods/generate；
+ * - 检测器：POST /experiment-methods/generate-detector。
+ * 生成绑定到 Elo 最高的假设；AI 实现经三闸注册后替代内置方法进入实验队列。
+ */
+async function planWithGeneratedMethods(
+  project: Project,
+  aiGenerateStrategy: boolean,
+  aiGenerateDetector: boolean,
+): Promise<Project> {
+  const hypothesisId = [...project.hypotheses]
+    .sort((a, b) => (b.score?.elo ?? 0) - (a.score?.elo ?? 0))[0]?.id
+    ?? null;
+  if (aiGenerateStrategy && hypothesisId) {
+    await api.generateSelectionStrategy(project.id, hypothesisId);
+  }
+  if (aiGenerateDetector && hypothesisId) {
+    const stem = hypothesisId.replace(/[^a-zA-Z0-9_-]/g, "").slice(-8);
+    await api.generateDetector(project.id, hypothesisId, `ai_detector_${stem}`);
+  }
+  return api.advance(project.id);
+}
+
 const STAGES: Array<{ id: Stage; label: string }> = [
   { id: "created", label: "研究输入" },
   { id: "scope_formalized", label: "问题形式化" },
@@ -299,7 +324,13 @@ export default function App() {
                   datasetPath={datasetPath}
                   setDatasetPath={setDatasetPath}
                   onAudit={() => execute(() => api.auditDataset(project.id, datasetPath))}
-                  onPlan={() => execute(() => api.advance(project.id))}
+                  onPlan={(aiGenerateStrategy, aiGenerateDetector) =>
+                    execute(() => planWithGeneratedMethods(
+                      project,
+                      aiGenerateStrategy,
+                      aiGenerateDetector,
+                    ))
+                  }
                   onApprove={() => execute(() => api.approve(project.id))}
                   onInitialize={() => {
                     const manifestPath = project.dataset_audits.at(-1)?.manifest_path;
