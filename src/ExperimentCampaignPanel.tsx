@@ -22,15 +22,128 @@ function numberFrom(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-function pairedMetricDifference(
-  summary: Record<string, unknown>,
-  metric: string,
-): number | null {
-  const metrics = summary.paired_metric_summaries;
-  if (!metrics || typeof metrics !== "object") return null;
-  const record = (metrics as Record<string, unknown>)[metric];
-  if (!record || typeof record !== "object") return null;
-  return numberFrom((record as Record<string, unknown>).mean_difference);
+function arrayLength(value: unknown): number | null {
+  return Array.isArray(value) ? value.length : null;
+}
+
+function recordFrom(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function phaseLabel(value: string) {
+  return ({
+    feasibility: "可行性验证",
+    sensitivity: "敏感性检验",
+    main_study: "主要研究",
+    replication: "重复验证",
+    ablation: "消融分析",
+    cross_dataset: "跨数据集验证",
+  }[value] ?? value.replaceAll("_", " "));
+}
+
+function roundStatusLabel(value: string) {
+  return ({
+    planned: "等待执行",
+    running: "正在执行",
+    ready_for_feedback: "等待分析",
+    completed: "已完成",
+    failed: "执行失败",
+  }[value] ?? value.replaceAll("_", " "));
+}
+
+function decisionLabel(value: string) {
+  return ({
+    expand: "扩大验证范围",
+    replicate: "重复验证趋势",
+    diagnose: "诊断异常结果",
+    stop: "停止实验",
+  }[value] ?? value);
+}
+
+function formatMetric(value: number | null) {
+  return value === null ? "-" : value.toFixed(4);
+}
+
+function formatSigned(value: number | null) {
+  return value === null ? "-" : `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
+}
+
+function runStatusLabel(value: Project["runs"][number]["status"]) {
+  return ({
+    planned: "尚未排队",
+    queued: "等待开始",
+    running: "正在执行",
+    succeeded: "已完成",
+    failed: "执行失败",
+  }[value]);
+}
+
+function strategyLabel(value: string) {
+  return ({
+    random: "随机抽取支持样本",
+    k_center: "分散覆盖抽取支持样本",
+  }[value] ?? value.replaceAll("_", " "));
+}
+
+function strategyCodeLabel(value: string) {
+  return value === "k_center" ? "k-center" : value;
+}
+
+function strategyRoleLabel(value: string, treatment: string, control: string) {
+  const role = value === control ? "对照条件" : value === treatment ? "实验条件" : "比较条件";
+  return `${role} · ${strategyCodeLabel(value)}`;
+}
+
+function metricLabel(value: string) {
+  return ({
+    image_auroc: "图像级识别",
+    pixel_auroc: "像素级定位",
+    aupro: "区域定位",
+  }[value] ?? value.replaceAll("_", " "));
+}
+
+function formatScore(value: number | undefined) {
+  return value === undefined ? null : `${(value * 100).toFixed(1)}%`;
+}
+
+function formatDuration(value: number | null) {
+  if (value === null) return null;
+  if (value < 60) return `${Math.round(value)} 秒`;
+  return `${Math.floor(value / 60)} 分 ${Math.round(value % 60)} 秒`;
+}
+
+function runErrorMessage(value: string | null) {
+  if (!value) return "运行未返回可读错误信息。";
+  if (value === "NotImplementedError: ") return "当前检测器流程尚未实现该步骤。";
+  return value;
+}
+
+function groupRoundRuns(runs: Project["runs"]) {
+  const groups = new Map<string, Project["runs"]>();
+  for (const run of runs) {
+    const key = `${run.category}:${run.shots}:${run.seed}`;
+    groups.set(key, [...(groups.get(key) ?? []), run]);
+  }
+  return [...groups.values()];
+}
+
+function describeRoundScope(
+  runs: Project["runs"],
+  treatment: string,
+  control: string,
+) {
+  const cells = new Map<string, Set<number>>();
+  for (const run of runs) {
+    const key = `${run.category}，K=${run.shots}`;
+    const seeds = cells.get(key) ?? new Set<number>();
+    seeds.add(run.seed);
+    cells.set(key, seeds);
+  }
+  if (cells.size === 0) return `比较 ${treatment} 与 ${control}。`;
+  const cellText = [...cells.entries()]
+    .map(([cell, seeds]) => `${cell}（${seeds.size} 个随机种子）`)
+    .join("；");
+  return `在 ${cellText} 上比较 ${treatment} 与 ${control}。`;
 }
 
 export function ExperimentCampaignPanel({
@@ -53,10 +166,19 @@ export function ExperimentCampaignPanel({
   const [aiGenerateDetector, setAiGenerateDetector] = useState(false);
   const audit = project.dataset_audits.at(-1) ?? null;
   const campaign = project.experiment_campaign;
+  const plannedHypothesisId = project.experiment_plan?.hypothesis_ids.at(0) ?? null;
+  const campaignHypothesis = campaign
+    ? project.hypotheses.find((hypothesis) => hypothesis.id === campaign.hypothesis_id) ?? null
+    : project.hypotheses.find((hypothesis) => hypothesis.id === plannedHypothesisId)
+      ?? project.hypotheses.find((hypothesis) => ["approved", "shortlisted"].includes(hypothesis.status))
+      ?? project.hypotheses[0]
+      ?? null;
   const campaignRuns = project.runs.filter((run) => run.round_id !== null);
   const terminalRuns = campaignRuns.filter((run) =>
     ["succeeded", "failed"].includes(run.status),
   ).length;
+  const successfulRuns = campaignRuns.filter((run) => run.status === "succeeded").length;
+  const failedCampaignRuns = campaignRuns.filter((run) => run.status === "failed").length;
   const verifiedRuns = campaignRuns.filter((run) => run.verified).length;
   const cumulativePairCount = campaign?.rounds.reduce(
     (sum, round) => sum + (
@@ -111,6 +233,46 @@ export function ExperimentCampaignPanel({
           {campaign ? campaign.status.replace("_", " ") : "SETUP"}
         </span>
       </div>
+
+      {campaignHypothesis ? (
+        <section className="campaign-hypothesis" aria-label="当前实验假设">
+          <div className="campaign-hypothesis-heading">
+            <div>
+              <p className="eyebrow">{campaign ? "本实验正在验证的假设" : "当前候选研究假设"}</p>
+              <h4>{campaignHypothesis.title}</h4>
+            </div>
+            <span>{campaign ? "已关联到本轮实验" : "等待生成实验方案"}</span>
+          </div>
+          <p className="hypothesis-claim">{campaignHypothesis.claim}</p>
+          <p className="hypothesis-rationale"><b>为什么验证：</b>{campaignHypothesis.rationale}</p>
+          {campaign && (
+            <dl className="hypothesis-contract">
+              <div><dt>比较方法</dt><dd>{strategyLabel(campaign.treatment)} vs {strategyLabel(campaign.control)}</dd></div>
+              <div><dt>主指标</dt><dd>{metricLabel(campaign.metric)}</dd></div>
+              <div><dt>判断方式</dt><dd>同类别、同 K、同随机种子成对比较</dd></div>
+            </dl>
+          )}
+          <div className="hypothesis-prediction">
+            <b>预期结果</b>
+            <span>{campaignHypothesis.predicted_direction}</span>
+          </div>
+          {(campaignHypothesis.independent_variables.length > 0 || campaignHypothesis.dependent_variables.length > 0) && (
+            <div className="hypothesis-variables">
+              {campaignHypothesis.independent_variables.length > 0 && <span><b>改变：</b>{campaignHypothesis.independent_variables.join("、")}</span>}
+              {campaignHypothesis.dependent_variables.length > 0 && <span><b>观察：</b>{campaignHypothesis.dependent_variables.join("、")}</span>}
+            </div>
+          )}
+          <details className="hypothesis-boundary">
+            <summary>查看这条假设如何被证伪</summary>
+            <p><strong>零假设：</strong>{campaignHypothesis.null_hypothesis}</p>
+            <ul>{campaignHypothesis.falsification_conditions.map((item) => <li key={item}>{item}</li>)}</ul>
+          </details>
+        </section>
+      ) : (
+        <div className="campaign-hypothesis missing">
+          当前实验还没有关联到已生成的研究假设，因此下面只能展示执行计划，暂时不能解释实验要验证的科学主张。
+        </div>
+      )}
 
       <div className="loop-rail" aria-label="实验闭环步骤">
         <div className={audit?.verified ? "done" : "active"}>
@@ -202,7 +364,7 @@ export function ExperimentCampaignPanel({
         <>
           <div className="campaign-metrics">
             <article><span>当前轮次</span><strong>{campaign.current_round}/{campaign.max_rounds}</strong></article>
-            <article><span>真实运行</span><strong>{terminalRuns}/{selectedRuns}</strong><small>{verifiedRuns} verified</small></article>
+            <article><span>运行进度</span><strong>已结束 {terminalRuns}/{selectedRuns}</strong><small>成功 {successfulRuns} · 失败 {failedCampaignRuns} · 待执行 {Math.max(selectedRuns - terminalRuns, 0)} · 已核验 {verifiedRuns}</small></article>
             <article><span>累计有效配对</span><strong>{cumulativePairCount}/{minimumPairs}</strong><small>Image Δ {cumulativeEffect?.toFixed(4) ?? "—"}</small></article>
             <article><span>避免穷举</span><strong>{avoidedRuns}</strong><small>共 {campaign.exhaustive_run_count} 个候选 run</small></article>
             <article><span>执行环境</span><strong>{campaign.device}</strong><small>{campaign.detector}</small></article>
@@ -299,29 +461,176 @@ export function ExperimentCampaignPanel({
 
           <div className="rounds-grid">
             {campaign.rounds.map((round) => {
-              const pairCount = numberFrom(round.result_summary.round_pair_count)
-                ?? numberFrom(round.result_summary.pair_count);
+              const roundRuns = round.run_ids
+                .map((runId) => project.runs.find((run) => run.id === runId))
+                .filter((run): run is Project["runs"][number] => run !== undefined);
+              const plannedRuns = numberFrom(round.result_summary.planned_runs) ?? round.run_ids.length;
+              const terminalRuns = numberFrom(round.result_summary.terminal_runs)
+                ?? roundRuns.filter((run) => ["succeeded", "failed"].includes(run.status)).length;
+              const verifiedRuns = numberFrom(round.result_summary.successful_verified_runs)
+                ?? roundRuns.filter((run) => run.status === "succeeded" && run.verified).length;
+              const failedRuns = arrayLength(round.result_summary.failed_run_ids)
+                ?? roundRuns.filter((run) => run.status === "failed").length;
+              const newPairCount = numberFrom(round.result_summary.round_pair_count) ?? 0;
+              const cumulativePairs = numberFrom(round.result_summary.pair_count)
+                ?? numberFrom(round.result_summary.cumulative_pair_count) ?? 0;
+              const minimumPairCount = numberFrom(round.result_summary.minimum_pairs) ?? minimumPairs;
               const meanDifference = numberFrom(round.result_summary.mean_difference);
-              const auproDifference = pairedMetricDifference(round.result_summary, "aupro");
+              const metricSummaries = recordFrom(round.result_summary.paired_metric_summaries);
+              const primaryMetric = recordFrom(metricSummaries?.[campaign.metric]);
+              const treatmentMean = numberFrom(primaryMetric?.treatment_mean);
+              const controlMean = numberFrom(primaryMetric?.control_mean);
+              const positiveFraction = numberFrom(primaryMetric?.positive_pair_fraction);
+              const measuredPairCount = numberFrom(primaryMetric?.pair_count) ?? newPairCount;
+              const categoryEffects = recordFrom(round.result_summary.category_mean_differences);
+              const categorySummary = categoryEffects
+                ? Object.entries(categoryEffects)
+                  .map(([category, effect]) => `${category} ${formatSigned(numberFrom(effect))}`)
+                  .join("；")
+                : "";
+              const hasMeasuredEffect = meanDifference !== null && treatmentMean !== null && controlMean !== null;
+              const evidenceReady = cumulativePairs >= minimumPairCount;
+              const positivePairs = positiveFraction === null || measuredPairCount === 0
+                ? null
+                : Math.round(positiveFraction * measuredPairCount);
+              const remainingRuns = Math.max(plannedRuns - terminalRuns, 0);
+              const runGroups = groupRoundRuns(roundRuns);
               return (
                 <article className={`round-card ${round.status}`} key={round.id}>
                   <div className="round-head">
                     <span>ROUND {round.index}</span>
-                    <b>{round.phase.replace("_", " ")}</b>
-                    <em>{round.status.replaceAll("_", " ")}</em>
+                    <b>{phaseLabel(round.phase)}</b>
+                    <em>{roundStatusLabel(round.status)}</em>
                   </div>
                   <h4>{round.objective}</h4>
-                  <p>{round.rationale}</p>
-                  <dl>
-                    <div><dt>运行</dt><dd>{round.run_ids.length}</dd></div>
-                    <div><dt>有效配对</dt><dd>{pairCount ?? "—"}</dd></div>
-                    <div><dt>Image Δ</dt><dd>{meanDifference?.toFixed(4) ?? "—"}</dd></div>
-                    <div><dt>AUPRO Δ</dt><dd>{auproDifference?.toFixed(4) ?? "—"}</dd></div>
+                  <p className="round-rationale">{round.rationale}</p>
+
+                  <div className="round-section round-design">
+                    <b>本轮做什么</b>
+                    <p>{describeRoundScope(roundRuns, campaign.treatment, campaign.control)}</p>
+                  </div>
+
+                  <dl className="round-progress">
+                    <div><dt>计划运行</dt><dd>{plannedRuns}</dd></div>
+                    <div><dt>已结束</dt><dd>{terminalRuns}/{plannedRuns}</dd></div>
+                    <div><dt>验证通过</dt><dd>{verifiedRuns}</dd></div>
+                    <div><dt>失败</dt><dd>{failedRuns}</dd></div>
                   </dl>
+
+                  <div className="round-section round-runs">
+                    <b>本轮逐项执行情况</b>
+                    <p>每一组使用同一类别、相同 K 和相同随机种子，只改变支持样本的选择方式，保证比较公平。</p>
+                    <div className="run-groups">
+                      {runGroups.map((runs) => {
+                        const [referenceRun] = runs;
+                        const treatmentRun = runs.find((run) => run.selection_strategy === campaign.treatment);
+                        const controlRun = runs.find((run) => run.selection_strategy === campaign.control);
+                        const comparable = treatmentRun?.metrics[campaign.metric] !== undefined
+                          && controlRun?.metrics[campaign.metric] !== undefined;
+                        const verifiedPair = treatmentRun?.verified && controlRun?.verified;
+                        const difference = comparable && treatmentRun && controlRun
+                          ? treatmentRun.metrics[campaign.metric] - controlRun.metrics[campaign.metric]
+                          : null;
+                        return (
+                          <div className="run-group" key={`${referenceRun.category}-${referenceRun.shots}-${referenceRun.seed}`}>
+                            <div className="run-group-head">
+                              <b>{referenceRun.category} · K={referenceRun.shots} · 随机种子：{referenceRun.seed}</b>
+                              <span>
+                                左侧：{strategyCodeLabel(campaign.control)}（对照） · 右侧：{strategyCodeLabel(campaign.treatment)}（实验）
+                              </span>
+                            </div>
+                            <div className="run-steps">
+                              {runs.map((run, index) => {
+                                const keyMetrics = ["image_auroc", "pixel_auroc", "aupro"]
+                                  .map((key) => ({ key, value: formatScore(run.metrics[key]) }))
+                                  .filter((item): item is { key: string; value: string } => item.value !== null);
+                                return (
+                                  <section className={`run-step ${run.status}`} key={run.id}>
+                                    <div className="run-step-head">
+                                      <div className="run-strategy-label">
+                                        <span className="run-side-label">{index === 0 ? "左侧" : "右侧"}</span>
+                                        <b>{strategyRoleLabel(run.selection_strategy, campaign.treatment, campaign.control)}</b>
+                                      </div>
+                                      <em>{runStatusLabel(run.status)}</em>
+                                    </div>
+                                    <small className="run-strategy-description">{strategyLabel(run.selection_strategy)}</small>
+                                    <p>
+                                      从 {run.dataset} 的 {run.category} 正常训练图像中选取 {run.shots} 张支持样本，
+                                      使用 {run.detector} 评估该类别测试集。
+                                    </p>
+                                    {run.status === "succeeded" && (
+                                      <>
+                                        {keyMetrics.length > 0 ? (
+                                          <dl className="run-measurements">
+                                            {keyMetrics.map((item) => <div key={item.key}><dt>{metricLabel(item.key)}</dt><dd>{item.value}</dd></div>)}
+                                          </dl>
+                                        ) : <small>运行结束，但尚未解析出可展示的指标。</small>}
+                                        <small>{run.verified ? "结果已通过完整性核验。" : "结果已产生，正在等待完整性核验，暂不作为正式证据。"}{formatDuration(run.duration_seconds) && ` 耗时 ${formatDuration(run.duration_seconds)}。`}</small>
+                                      </>
+                                    )}
+                                    {run.status === "running" && <small>任务已经启动。后端尚未记录细分子步骤或百分比，完成后会在这里显示实际指标。</small>}
+                                    {(run.status === "planned" || run.status === "queued") && <small>尚未开始；会在前序任务释放执行资源后按本轮计划运行。</small>}
+                                    {run.status === "failed" && <small className="run-error">未得到结果：{runErrorMessage(run.error)}</small>}
+                                  </section>
+                                );
+                              })}
+                            </div>
+                            <div className={`pair-state ${comparable ? "available" : "waiting"}`}>
+                              {comparable ? (
+                                <p>
+                                  这一对的原始比较：{campaign.treatment} 的 {metricLabel(campaign.metric)}
+                                  为 {formatScore(treatmentRun?.metrics[campaign.metric])}，{campaign.control} 为 {formatScore(controlRun?.metrics[campaign.metric])}，
+                                  差值 {formatSigned(difference)}。{verifiedPair ? "该对已进入正式证据统计。" : "两项结果仍待核验，暂不作为正式结论。"}
+                                </p>
+                              ) : <p>这组比较尚未完成：只有两种策略都取得并核验结果后，才能判断支持集选择是否带来差异。</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {hasMeasuredEffect ? (
+                    <div className="round-section round-result">
+                      <b>本轮结果</b>
+                      <p>
+                        {campaign.treatment} 的 {campaign.metric} 平均为 {formatMetric(treatmentMean)}，
+                        {campaign.control} 为 {formatMetric(controlMean)}，差值为
+                        <strong className={meanDifference > 0 ? "positive" : meanDifference < 0 ? "negative" : "neutral"}>{formatSigned(meanDifference)}</strong>。
+                      </p>
+                      <small>
+                        本轮新增 {newPairCount} 个有效成对比较
+                        {positivePairs !== null && `，其中 ${positivePairs}/${measuredPairCount} 个 ${campaign.treatment} 表现更好`}
+                        {categorySummary && `。类别表现：${categorySummary}`}。
+                      </small>
+                    </div>
+                  ) : (
+                    <div className="round-section round-pending">
+                      <b>{round.status === "running" ? "正在获得结果" : "尚未形成有效结果"}</b>
+                      <p>
+                        {round.status === "running"
+                          ? `已结束 ${terminalRuns}/${plannedRuns} 次运行，剩余 ${remainingRuns} 次。各项运行做了什么、已经获得哪些原始指标，见上方“本轮逐项执行情况”。`
+                          : "本轮尚未形成完整的成对比较，因此暂时无法判断哪种方法更好。"}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className={`round-section round-evidence ${evidenceReady ? "ready" : "pending"}`}>
+                    <b>{evidenceReady ? "具备初步判断条件" : "证据仍不足"}</b>
+                    <p>
+                      截至本轮累计形成 {cumulativePairs}/{minimumPairCount} 个有效成对比较。
+                      {evidenceReady
+                        ? "已达到预注册的最小证据门槛，但仍需结合后续统计分析确认。"
+                        : "尚未达到预注册的最小门槛，当前趋势不能作为最终结论。"}
+                    </p>
+                  </div>
+
                   {round.feedback && (
-                    <div className="feedback-note">
-                      <b>{round.feedback.advisor} · {round.feedback.decision}</b>
+                    <div className="round-section feedback-note">
+                      <b>系统决定：{decisionLabel(round.feedback.decision)}</b>
                       <p>{round.feedback.rationale}</p>
+                      {round.feedback.observed_patterns.length > 0 && <small>观察到：{round.feedback.observed_patterns.join("；")}</small>}
+                      <small>下一阶段：{phaseLabel(round.feedback.next_phase)} · 预期新增信息：{Math.round(round.feedback.expected_information_gain * 100)}%</small>
 
                       {round.feedback.reasoning_chain && round.feedback.reasoning_chain.length > 0 && (
                         <div className="reasoning-chain">
@@ -367,11 +676,16 @@ export function ExperimentCampaignPanel({
                       )}
                     </div>
                   )}
+                  {round.status === "ready_for_feedback" && !round.feedback && (
+                    <div className="round-section feedback-note pending">
+                      <b>等待系统分析</b>
+                      <p>本轮运行已结束。系统将根据真实成对结果决定扩大范围、重复验证、诊断异常结果或停止实验。</p>
+                    </div>
+                  )}
                 </article>
               );
             })}
           </div>
-
           {campaign && campaign.rounds.length > 0 && (
             <EfficiencyChart campaign={campaign} />
           )}

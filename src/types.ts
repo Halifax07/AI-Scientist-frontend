@@ -45,17 +45,28 @@ export interface AnalysisContract {
 
 export interface Hypothesis {
   id: string;
+  gap_id: string;
   title: string;
   claim: string;
   null_hypothesis: string;
+  rationale: string;
+  independent_variables: string[];
+  dependent_variables: string[];
+  predicted_direction: string;
   falsification_conditions: string[];
+  evidence_ids: string[];
+  closest_prior_work: string[];
   status: string;
   score: HypothesisScore | null;
   analysis_contract: AnalysisContract | null;
+  revision: number;
+  parent_hypothesis_id: string | null;
 }
 
 export interface ExperimentPlan {
   id: string;
+  hypothesis_ids: string[];
+  hypothesis_contracts: Record<string, AnalysisContract>;
   protocols: string[];
   detectors: string[];
   selection_strategies: string[];
@@ -94,6 +105,7 @@ export interface AnalysisFinding {
 
 export interface ExperimentRun {
   id: string;
+  dataset: string;
   category: string;
   detector: string;
   protocol: string;
@@ -106,6 +118,9 @@ export interface ExperimentRun {
   status: "planned" | "queued" | "running" | "succeeded" | "failed";
   metrics: Record<string, number>;
   verified: boolean;
+  result_source: "real_executor" | "external_import" | "synthetic_test" | null;
+  started_at: string | null;
+  finished_at: string | null;
   duration_seconds: number | null;
   error: string | null;
 }

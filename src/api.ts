@@ -71,12 +71,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ hypothesis_id: hypothesisId, name_stem: nameStem }),
     }),
-  initializeCampaign: (projectId: string, datasetManifestPath: string) =>
+  initializeCampaign: (
+    projectId: string,
+    datasetManifestPath: string,
+    detector = "anomalydino",
+  ) =>
     request<Project>(`/api/v1/projects/${projectId}/experiment-campaign/initialize`, {
       method: "POST",
       body: JSON.stringify({
         dataset_manifest_path: datasetManifestPath,
-        detector: "anomalydino",
+        detector,
         device: "cuda:0",
         max_rounds: 3,
         max_runs: 24,

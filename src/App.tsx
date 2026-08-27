@@ -15,17 +15,102 @@ async function planWithGeneratedMethods(
   aiGenerateStrategy: boolean,
   aiGenerateDetector: boolean,
 ): Promise<Project> {
-  const hypothesisId = [...project.hypotheses]
-    .sort((a, b) => (b.score?.elo ?? 0) - (a.score?.elo ?? 0))[0]?.id
-    ?? null;
+  const rankedHypotheses = [...project.hypotheses]
+    .filter((item) => item.analysis_contract
+      && ["selection_main_effect", "query_adaptation"].includes(item.analysis_contract.kind))
+    .sort((a, b) => (b.score?.elo ?? 0) - (a.score?.elo ?? 0));
+  const detectorCompatible = aiGenerateDetector
+    ? rankedHypotheses.filter((item) =>
+      ["image_auroc", "image_ap"].includes(item.analysis_contract?.metric ?? ""),
+    )
+    : rankedHypotheses;
+  const hypothesisId = (detectorCompatible[0] ?? rankedHypotheses[0])?.id ?? null;
+  let updatedProject = project;
   if (aiGenerateStrategy && hypothesisId) {
-    await api.generateSelectionStrategy(project.id, hypothesisId);
+    updatedProject = await api.generateSelectionStrategy(project.id, hypothesisId);
+    requireValidatedGeneratedMethods(
+      updatedProject,
+      hypothesisId,
+      "selection_strategy",
+      "选样方法",
+    );
   }
   if (aiGenerateDetector && hypothesisId) {
     const stem = hypothesisId.replace(/[^a-zA-Z0-9_-]/g, "").slice(-8);
-    await api.generateDetector(project.id, hypothesisId, `ai_detector_${stem}`);
+    updatedProject = await api.generateDetector(
+      project.id,
+      hypothesisId,
+      `ai_detector_${stem}`,
+    );
+    requireValidatedGeneratedMethods(
+      updatedProject,
+      hypothesisId,
+      "detector",
+      "检测器",
+    );
   }
-  return api.advance(project.id);
+  return api.advance(updatedProject.id);
+}
+
+function requireValidatedGeneratedMethods(
+  project: Project,
+  hypothesisId: string,
+  kind: "selection_strategy" | "detector",
+  label: string,
+) {
+  const implementations = (project.method_implementations ?? []).filter(
+    (item) => item.hypothesis_id === hypothesisId && item.kind === kind,
+  );
+  const invalid = implementations.filter(
+    (item) => !["validated", "approved"].includes(item.status)
+      || item.static_validation?.passed !== true
+      || item.smoke_result?.passed !== true,
+  );
+  if (implementations.length > 0 && invalid.length === 0) return;
+
+  const issues = invalid.flatMap((item) => item.static_validation?.issues ?? []);
+  const smokeFailures = invalid
+    .map((item) => item.smoke_result?.summary)
+    .filter((item): item is string => Boolean(item));
+  const details = [...issues, ...smokeFailures].join("；") || "未产生通过验证的实现";
+  throw new Error(`AI 生成${label}未通过注册闸门：${details}`);
+}
+
+function preferredCampaignDetector(project: Project): string {
+  const planned = new Set(project.experiment_plan?.detectors ?? []);
+  return (project.method_implementations ?? []).find(
+    (item) => item.kind === "detector"
+      && item.status === "approved"
+      && planned.has(item.name),
+  )?.name ?? "anomalydino";
+}
+
+async function approveWithRequiredMethods(project: Project): Promise<Project> {
+  const hypothesisId = project.experiment_plan?.hypothesis_ids.at(0) ?? null;
+  const hypothesis = project.hypotheses.find((item) => item.id === hypothesisId);
+  const contract = hypothesisId
+    ? project.experiment_plan?.hypothesis_contracts[hypothesisId]
+      ?? hypothesis?.analysis_contract
+    : null;
+  if (hypothesisId && contract && ["selection_main_effect", "query_adaptation"].includes(contract.kind)) {
+    const builtinStrategies = new Set(["random", "k_center"]);
+    const implementations = project.method_implementations ?? [];
+    const hasMissingImplementation = [contract.treatment, contract.control].some((name) =>
+      !builtinStrategies.has(name)
+      && !implementations.some((implementation) =>
+        implementation.kind === "selection_strategy"
+        && implementation.hypothesis_id === hypothesisId
+        && implementation.name === name
+        && ["validated", "approved"].includes(implementation.status)
+        && implementation.static_validation?.passed === true
+        && implementation.smoke_result?.passed === true,
+      ),
+    );
+    if (hasMissingImplementation) {
+      await api.generateSelectionStrategy(project.id, hypothesisId);
+    }
+  }
+  return api.approve(project.id);
 }
 
 const STAGES: Array<{ id: Stage; label: string }> = [
@@ -51,7 +136,7 @@ export default function App() {
   const [researchPrompt, setResearchPrompt] = useState("");
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [datasetPath, setDatasetPath] = useState(
-    "E:\\揭榜挂帅\\AI Scientist\\data\\mvtec_anomaly_detection",
+    "F:\\mvtec_anomaly_detection",
   );
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const [cycleGuidance, setCycleGuidance] = useState(
@@ -213,7 +298,10 @@ export default function App() {
                   </button>
                 </>
               ) : project.stage === "awaiting_experiment_approval" ? (
-                <button disabled={busy} onClick={() => execute(() => api.approve(project.id))}>
+                <button
+                  disabled={busy}
+                  onClick={() => execute(() => approveWithRequiredMethods(project))}
+                >
                   批准预注册实验
                 </button>
               ) : needsRevisionDecision ? (
@@ -331,11 +419,15 @@ export default function App() {
                       aiGenerateDetector,
                     ))
                   }
-                  onApprove={() => execute(() => api.approve(project.id))}
+                  onApprove={() => execute(() => approveWithRequiredMethods(project))}
                   onInitialize={() => {
                     const manifestPath = project.dataset_audits.at(-1)?.manifest_path;
                     if (manifestPath) {
-                      void execute(() => api.initializeCampaign(project.id, manifestPath));
+                      void execute(() => api.initializeCampaign(
+                        project.id,
+                        manifestPath,
+                        preferredCampaignDetector(project),
+                      ));
                     }
                   }}
                   onExecuteNext={executeNextExperiment}
@@ -389,7 +481,7 @@ export default function App() {
                   <p><b>K</b>{project.experiment_plan.shots.join(" / ")}</p>
                   <p><b>重复</b>{project.experiment_plan.seeds.length} seeds</p>
                   <p><b>预算</b>{project.experiment_plan.estimated_gpu_hours} GPU hours</p>
-                  <code>{project.experiment_plan.preregistration_digest.slice(0, 20)}…</code>
+                  <small className="plan-state">实验范围已冻结，执行期间不会静默修改。</small>
                 </div>
               ) : (
                 <p className="placeholder">实验计划将在假设审查后生成。</p>
