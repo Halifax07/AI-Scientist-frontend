@@ -24,30 +24,33 @@ async function planWithGeneratedMethods(
       ["image_auroc", "image_ap"].includes(item.analysis_contract?.metric ?? ""),
     )
     : rankedHypotheses;
-  const hypothesisId = (detectorCompatible[0] ?? rankedHypotheses[0])?.id ?? null;
   let updatedProject = project;
-  if (aiGenerateStrategy && hypothesisId) {
-    updatedProject = await api.generateSelectionStrategy(project.id, hypothesisId);
-    requireValidatedGeneratedMethods(
-      updatedProject,
-      hypothesisId,
-      "selection_strategy",
-      "选样方法",
-    );
+  if (aiGenerateStrategy) {
+    for (const hypothesis of rankedHypotheses) {
+      updatedProject = await api.generateSelectionStrategy(project.id, hypothesis.id);
+      requireValidatedGeneratedMethods(
+        updatedProject,
+        hypothesis.id,
+        "selection_strategy",
+        "选样方法",
+      );
+    }
   }
-  if (aiGenerateDetector && hypothesisId) {
-    const stem = hypothesisId.replace(/[^a-zA-Z0-9_-]/g, "").slice(-8);
-    updatedProject = await api.generateDetector(
-      project.id,
-      hypothesisId,
-      `ai_detector_${stem}`,
-    );
-    requireValidatedGeneratedMethods(
-      updatedProject,
-      hypothesisId,
-      "detector",
-      "检测器",
-    );
+  if (aiGenerateDetector) {
+    for (const hypothesis of detectorCompatible) {
+      const stem = hypothesis.id.replace(/[^a-zA-Z0-9_-]/g, "").slice(-8);
+      updatedProject = await api.generateDetector(
+        project.id,
+        hypothesis.id,
+        `ai_detector_${stem}`,
+      );
+      requireValidatedGeneratedMethods(
+        updatedProject,
+        hypothesis.id,
+        "detector",
+        "检测器",
+      );
+    }
   }
   return api.advance(updatedProject.id);
 }
@@ -86,13 +89,11 @@ function preferredCampaignDetector(project: Project): string {
 }
 
 async function approveWithRequiredMethods(project: Project): Promise<Project> {
-  const hypothesisId = project.experiment_plan?.hypothesis_ids.at(0) ?? null;
-  const hypothesis = project.hypotheses.find((item) => item.id === hypothesisId);
-  const contract = hypothesisId
-    ? project.experiment_plan?.hypothesis_contracts[hypothesisId]
-      ?? hypothesis?.analysis_contract
-    : null;
-  if (hypothesisId && contract && ["selection_main_effect", "query_adaptation"].includes(contract.kind)) {
+  for (const hypothesisId of project.experiment_plan?.hypothesis_ids ?? []) {
+    const hypothesis = project.hypotheses.find((item) => item.id === hypothesisId);
+    const contract = project.experiment_plan?.hypothesis_contracts[hypothesisId]
+      ?? hypothesis?.analysis_contract;
+    if (!contract || !["selection_main_effect", "query_adaptation"].includes(contract.kind)) continue;
     const builtinStrategies = new Set(["random", "k_center"]);
     const implementations = project.method_implementations ?? [];
     const hasMissingImplementation = [contract.treatment, contract.control].some((name) =>
@@ -170,25 +171,109 @@ export default function App() {
     }
   }
 
-  async function executeNextExperiment(userGuidance: string): Promise<boolean> {
-    if (!project?.experiment_campaign) return false;
+  async function driveExperimentLoop(seed: Project): Promise<Project> {
+    let current = seed;
+    // One HTTP request executes one paired run.  This client-side driver turns
+    // those low-level calls into the user-facing Round semantics: three
+    // iterations, one midpoint gate, then automatic transition to the next
+    // innovation's Round.
+    for (let guard = 0; guard < 48; guard += 1) {
+      const campaign = current.experiment_campaign;
+      if (!campaign || campaign.status === "completed" || campaign.status === "failed") break;
+      if (campaign.status === "active") {
+        const result = await api.executeNext(
+          current.id,
+          undefined,
+          campaign.candidate_pool_size,
+        );
+        current = result.project;
+        setProject(current);
+        const metric = result.execution.normalized_result?.metrics.image_auroc;
+        setRunNotice(
+          result.execution.status === "succeeded"
+            ? `Round ${current.experiment_campaign?.current_round ?? "—"} 自动迭代完成：${result.run_id}，Image AUROC ${metric?.toFixed(4) ?? "已解析"}。`
+            : `实验 ${result.run_id} 未成功：${result.execution.error ?? result.execution.status}`,
+        );
+        continue;
+      }
+      if (campaign.status === "awaiting_feedback") {
+        // Final aggregation of the completed Round is automatic; no second
+        // human approval is required here.
+        current = await api.reviewRound(current.id);
+        setProject(current);
+        continue;
+      }
+      // awaiting_guidance is the sole human gate inside a Round.
+      break;
+    }
+    return current;
+  }
+
+  async function initializeAndRun(): Promise<void> {
+    if (!project?.experiment_plan) return;
     setBusy(true);
     setError(null);
     setRunNotice(null);
     try {
-      const result = await api.executeNext(
+      const firstHypothesisId = project.experiment_plan.hypothesis_ids[0];
+      const manifestPath = project.dataset_audits.at(-1)?.manifest_path;
+      if (!firstHypothesisId || !manifestPath) throw new Error("请先完成数据审计和实验预注册");
+      const initialized = await api.initializeCampaign(
         project.id,
-        userGuidance,
-        project.experiment_campaign.candidate_pool_size,
+        manifestPath,
+        firstHypothesisId,
+        preferredCampaignDetector(project),
       );
-      setProject(result.project);
-      const metric = result.execution.normalized_result?.metrics.image_auroc;
-      setRunNotice(
-        result.execution.status === "succeeded"
-          ? `AI 已${result.guidance_decision.disposition === "applied" ? "采纳" : "处理"}指导并选择 ${result.run_id}：${result.guidance_decision.interpretation} Image AUROC ${metric?.toFixed(4) ?? "已解析"}，耗时 ${result.execution.duration_seconds?.toFixed(1) ?? "—"} 秒。`
-          : `实验 ${result.run_id} 未成功：${result.execution.error ?? result.execution.status}`,
-      );
-      return result.execution.status === "succeeded";
+      setProject(initialized);
+      await driveExperimentLoop(initialized);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function advanceRoundAutomatically(): Promise<boolean> {
+    if (!project) return false;
+    setBusy(true);
+    setError(null);
+    try {
+      await driveExperimentLoop(project);
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function continueRound(guidance: string): Promise<boolean> {
+    if (!project) return false;
+    setBusy(true);
+    setError(null);
+    try {
+      const afterGuidance = await api.reviewRound(project.id, guidance);
+      setProject(afterGuidance);
+      await driveExperimentLoop(afterGuidance);
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewCompletedRound(): Promise<boolean> {
+    if (!project) return false;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.reviewRound(project.id);
+      setProject(updated);
+      await driveExperimentLoop(updated);
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       return false;
@@ -420,19 +505,10 @@ export default function App() {
                     ))
                   }
                   onApprove={() => execute(() => approveWithRequiredMethods(project))}
-                  onInitialize={(hypothesisId) => {
-                    const manifestPath = project.dataset_audits.at(-1)?.manifest_path;
-                    if (manifestPath) {
-                      void execute(() => api.initializeCampaign(
-                        project.id,
-                        manifestPath,
-                        hypothesisId,
-                        preferredCampaignDetector(project),
-                      ));
-                    }
-                  }}
-                  onExecuteNext={executeNextExperiment}
-                  onReviewRound={() => execute(() => api.reviewRound(project.id))}
+                  onInitialize={() => { void initializeAndRun(); }}
+                  onAdvanceRound={advanceRoundAutomatically}
+                  onContinueRound={continueRound}
+                  onReviewRound={reviewCompletedRound}
                   onFinalize={() => execute(() => api.finalizeResults(project.id))}
                 />
                 {runNotice && <p className="run-notice">{runNotice}</p>}

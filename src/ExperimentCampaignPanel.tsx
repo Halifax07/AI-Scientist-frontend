@@ -12,9 +12,10 @@ interface Props {
   onAudit: () => void;
   onPlan: (aiGenerateStrategy: boolean, aiGenerateDetector: boolean) => void;
   onApprove: () => void;
-  onInitialize: (hypothesisId: string) => void;
-  onExecuteNext: (guidance: string) => Promise<boolean>;
-  onReviewRound: () => void;
+  onInitialize: () => void;
+  onAdvanceRound: () => Promise<boolean>;
+  onContinueRound: (guidance: string) => Promise<boolean>;
+  onReviewRound: () => Promise<boolean>;
   onFinalize: () => void;
 }
 
@@ -45,6 +46,7 @@ function roundStatusLabel(value: string) {
   return ({
     planned: "等待执行",
     running: "正在执行",
+    awaiting_guidance: "等待中途指导",
     ready_for_feedback: "等待分析",
     completed: "已完成",
     failed: "执行失败",
@@ -155,12 +157,13 @@ export function ExperimentCampaignPanel({
   onPlan,
   onApprove,
   onInitialize,
-  onExecuteNext,
+  onAdvanceRound,
+  onContinueRound,
   onReviewRound,
   onFinalize,
 }: Props) {
-  const [executionGuidance, setExecutionGuidance] = useState(
-    "按预注册约束和系统优先级执行，并优先选择当前信息增益最高的任务。",
+  const [roundGuidance, setRoundGuidance] = useState(
+    "请结合第 1 次迭代结果，优先检验最可能证伪该创新点的类别与 K 值，并保持预注册比较公平。",
   );
   const [aiGenerateStrategy, setAiGenerateStrategy] = useState(false);
   const [aiGenerateDetector, setAiGenerateDetector] = useState(false);
@@ -191,7 +194,7 @@ export function ExperimentCampaignPanel({
   const minimumPairs = campaign?.rounds
     .map((round) => numberFrom(round.result_summary.minimum_pairs))
     .find((value) => value !== null) ?? 6;
-  const hasFeedback = campaign?.rounds.some((round) => round.feedback !== null) ?? false;
+  const hasCompletedRound = campaign?.rounds.some((round) => round.status === "completed") ?? false;
   const latestCompletedSummary = [...(campaign?.rounds ?? [])]
     .reverse()
     .find((round) => numberFrom(round.result_summary.pair_count) !== null)
@@ -202,25 +205,33 @@ export function ExperimentCampaignPanel({
     : null;
   const selectedRuns = campaign?.rounds.reduce((sum, round) => sum + round.run_ids.length, 0) ?? 0;
   const avoidedRuns = Math.max((campaign?.exhaustive_run_count ?? 0) - selectedRuns, 0);
-  const latestExecutionGuidance = [...project.guidance_records]
+  const latestRoundGuidance = [...project.guidance_records]
     .reverse()
-    .find((item) => item.scope === "experiment_execution");
+    .find((item) => item.scope === "round_iteration");
   const currentHypothesis = campaign
     ? project.hypotheses.find(h => h.id === campaign.hypothesis_id)
     : undefined;
   const approvedHypothesisIds = new Set(project.experiment_plan?.hypothesis_ids ?? []);
+  const allCampaigns = [
+    ...project.experiment_campaign_history,
+    ...(campaign ? [campaign] : []),
+  ];
+  const allRounds = allCampaigns.flatMap((item) => item.rounds);
   const completedHypothesisIds = new Set([
-    ...project.experiment_campaign_history
-      .filter((item) => item.status === "completed")
-      .map((item) => item.hypothesis_id),
-    ...(campaign?.status === "completed" ? [campaign.hypothesis_id] : []),
+    ...allRounds
+      .filter((round) => round.status === "completed" && round.hypothesis_id)
+      .map((round) => round.hypothesis_id),
   ]);
+  const firstRunnableHypothesisId = project.experiment_plan?.hypothesis_ids.find(
+    (id) => project.hypotheses.find((hypothesis) => hypothesis.id === id)?.execution_readiness
+      === "executable",
+  ) ?? null;
 
-  async function executeWithGuidance() {
-    const succeeded = await onExecuteNext(executionGuidance.trim());
+  async function continueWithGuidance() {
+    const succeeded = await onContinueRound(roundGuidance.trim());
     if (succeeded) {
-      setExecutionGuidance(
-        "按预注册约束和系统优先级执行，并优先选择当前信息增益最高的任务。",
+      setRoundGuidance(
+        "请结合第 1 次迭代结果，优先检验最可能证伪该创新点的类别与 K 值，并保持预注册比较公平。",
       );
     }
   }
@@ -233,7 +244,7 @@ export function ExperimentCampaignPanel({
           <h3>科学实验任务规划与反馈迭代</h3>
           <p>
             真实 MVTec 数据 → DINOv2 支持集表征 → AnomalyDINO 本机运行 → 成对统计 →
-            Qwen 规划下一轮。每一轮都写入 Research Ledger，可追溯且可复现。
+            Qwen 调整本 Round 后两次迭代并切换下一个创新点。每个 Round 都写入 Research Ledger。
           </p>
         </div>
         <span className={`campaign-state ${campaign?.status ?? "setup"}`}>
@@ -291,7 +302,7 @@ export function ExperimentCampaignPanel({
         <div className={campaign?.status === "active" ? "active" : terminalRuns ? "done" : ""}>
           <span>3</span><b>真实执行</b><small>本机 GPU 隔离运行</small>
         </div>
-        <div className={campaign?.status === "awaiting_feedback" ? "active" : hasFeedback || campaign?.status === "completed" ? "done" : ""}>
+        <div className={campaign?.status === "awaiting_feedback" ? "active" : hasCompletedRound || campaign?.status === "completed" ? "done" : ""}>
           <span>4</span><b>反馈迭代</b><small>结果改变下一轮计划</small>
         </div>
       </div>
@@ -306,11 +317,10 @@ export function ExperimentCampaignPanel({
             const isCurrent = campaign?.hypothesis_id === hypothesis.id;
             const isCompleted = completedHypothesisIds.has(hypothesis.id);
             const isApproved = approvedHypothesisIds.has(hypothesis.id);
-            const trackCampaign = [
-              ...project.experiment_campaign_history,
-              ...(campaign ? [campaign] : []),
-            ].filter((item) => item.hypothesis_id === hypothesis.id).at(-1);
-            const trackSummary = trackCampaign?.rounds.at(-1)?.result_summary;
+            const trackRound = allRounds
+              .filter((round) => round.hypothesis_id === hypothesis.id)
+              .at(-1);
+            const trackSummary = trackRound?.result_summary;
             const trackPairs = trackSummary
               ? numberFrom(trackSummary.cumulative_pair_count)
                 ?? numberFrom(trackSummary.pair_count)
@@ -366,9 +376,9 @@ export function ExperimentCampaignPanel({
                     <small>完整指标和失败记录保留在该创新点对应的实验轮次中。</small>
                   </div>
                 )}
-                {canStart && (
-                  <button disabled={busy} onClick={() => onInitialize(hypothesis.id)}>
-                    选择该创新点并启动真实实验
+                {canStart && hypothesis.id === firstRunnableHypothesisId && (
+                  <button disabled={busy} onClick={onInitialize}>
+                    启动全部创新点的闭环实验
                   </button>
                 )}
               </article>
@@ -439,7 +449,7 @@ export function ExperimentCampaignPanel({
             </button>
           )}
           <small>
-            数据审计完成后，请在上方验证队列中明确选择一个已预注册的创新点启动实验。
+            数据审计完成后，系统会按预注册顺序为每个创新点建立一个 Round；每个 Round 固定自动迭代三次。
           </small>
         </div>
       ) : (
@@ -458,15 +468,22 @@ export function ExperimentCampaignPanel({
               <span>{campaign.next_action}</span>
               <small>
                 {campaign.status === "active"
-                  ? "首次运行会生成并缓存 DINOv2 正常样本表征；之后同类别运行会直接复用。"
+                  ? "系统正在自动完成当前 Round 的三次迭代；首次运行会生成并缓存 DINOv2 正常样本表征。"
+                  : campaign.status === "awaiting_guidance"
+                    ? "第 1 次迭代已完成，请提交本 Round 唯一指导，系统将自动完成第 2、3 次迭代。"
                   : campaign.status === "awaiting_feedback"
-                    ? "本轮所有实验已结束，只有真实指标会进入下一轮规划。"
+                    ? "本 Round 三次迭代已结束，系统将汇总当前创新点并进入下一个创新点。"
                     : `实验已按确定性边界停止（${campaign.termination_reason ?? "stopping condition"}），可以锁定结果进入正式统计。`}
-              </small>
+            </small>
             </div>
+            {campaign.status === "active" && (
+              <button disabled={busy} onClick={() => void onAdvanceRound()}>
+                {busy ? "自动迭代执行中…" : "继续自动执行当前 Round"}
+              </button>
+            )}
             {campaign.status === "awaiting_feedback" && (
-              <button disabled={busy} onClick={onReviewRound}>
-                {busy ? "Qwen 正在分析…" : "分析本轮并规划下一轮"}
+              <button disabled={busy} onClick={() => void onReviewRound()}>
+                {busy ? "Qwen 正在汇总…" : "汇总本 Round 并进入下一创新点"}
               </button>
             )}
             {campaign.status === "completed" && project.stage === "experiments_queued" && (
@@ -476,32 +493,32 @@ export function ExperimentCampaignPanel({
             )}
           </div>
 
-          {campaign.status === "active" && (
+          {campaign.status === "awaiting_guidance" && (
             <div className="human-guidance-box execution-guidance">
               <div className="guidance-copy">
-                <p className="eyebrow">Human-in-the-loop · before every run</p>
-                <h4>本次真实实验希望 AI Scientist 怎么做？</h4>
+                <p className="eyebrow">Human-in-the-loop · once per Round</p>
+                <h4>请对本 Round 的后两次自动迭代提供一次指导</h4>
                 <p>
-                  可以指定优先类别、K、seed 或 random/k-center 顺序。AI 只能从本轮已预注册队列中选择，
-                  超出边界的建议会保留并解释，但不会暗改实验配置。
+                  第 1 次迭代已经完成。你的建议只影响本 Round 的第 2、3 次迭代选择；
+                  三次迭代始终绑定同一个创新点，不能修改预注册方法、指标或数据边界。
                 </p>
               </div>
-              <label htmlFor="execution-guidance">本次实验指导</label>
+              <label htmlFor="round-guidance">本 Round 中途指导</label>
               <textarea
-                id="execution-guidance"
-                value={executionGuidance}
-                onChange={(event) => setExecutionGuidance(event.target.value)}
+                id="round-guidance"
+                value={roundGuidance}
+                onChange={(event) => setRoundGuidance(event.target.value)}
                 rows={3}
                 maxLength={3000}
                 disabled={busy}
-                placeholder="例如：优先运行 transistor 类别；如果本轮没有该任务，则按信息增益最高的任务执行并说明原因。"
+                placeholder="例如：优先选择最能检验该假设边界的类别，并增加 K=4 的敏感性比较。"
               />
               <div className="guidance-presets" aria-label="实验指导快捷建议">
                 <button
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setExecutionGuidance("优先执行本轮信息增益最高的任务，并说明选择依据。")}
+                  onClick={() => setRoundGuidance("优先执行最可能证伪当前创新点的任务，并说明选择依据。")}
                 >
                   信息增益优先
                 </button>
@@ -509,7 +526,7 @@ export function ExperimentCampaignPanel({
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setExecutionGuidance("优先完成同一实验单元的 random 与 k-center 配对，避免留下不完整配对。")}
+                  onClick={() => setRoundGuidance("优先扩大类别覆盖，同时保持 random 与 k-center 成对比较。")}
                 >
                   优先补齐配对
                 </button>
@@ -517,25 +534,25 @@ export function ExperimentCampaignPanel({
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setExecutionGuidance("按预注册约束和系统默认优先级执行，不做额外调整。")}
+                  onClick={() => setRoundGuidance("按 AI Scientist 的信息增益建议继续三次迭代。")}
                 >
                   按系统建议
                 </button>
               </div>
               <div className="guidance-submit">
-                <small>{executionGuidance.trim().length}/3000 · 原文、AI 解释和 Run ID 将写入 Research Ledger</small>
+                <small>{roundGuidance.trim().length}/3000 · 原文、AI 解释和后续 Run ID 将写入 Research Ledger</small>
                 <button
-                  disabled={busy || executionGuidance.trim().length < 2}
-                  onClick={() => void executeWithGuidance()}
+                  disabled={busy || roundGuidance.trim().length < 2}
+                  onClick={() => void continueWithGuidance()}
                 >
-                  {busy ? "AI 解释指导并运行中…" : "提交指导并运行下一项真实实验"}
+                  {busy ? "采纳指导并自动完成第 2、3 次迭代…" : "提交指导并继续本 Round"}
                 </button>
               </div>
-              {latestExecutionGuidance && (
-                <div className={`guidance-decision ${latestExecutionGuidance.disposition}`}>
-                  <b>最近一次 AI 处理：{latestExecutionGuidance.disposition.replace("_", " ")}</b>
-                  <span>{latestExecutionGuidance.interpretation}</span>
-                  <small>{latestExecutionGuidance.rationale}</small>
+              {latestRoundGuidance && (
+                <div className={`guidance-decision ${latestRoundGuidance.disposition}`}>
+                  <b>本 Round 指导已记录：{latestRoundGuidance.disposition.replace("_", " ")}</b>
+                  <span>{latestRoundGuidance.interpretation}</span>
+                  <small>{latestRoundGuidance.rationale}</small>
                 </div>
               )}
             </div>
@@ -543,6 +560,12 @@ export function ExperimentCampaignPanel({
 
           <div className="rounds-grid">
             {campaign.rounds.map((round) => {
+              const roundHypothesis = project.hypotheses.find(
+                (hypothesis) => hypothesis.id === round.hypothesis_id,
+              );
+              const roundTreatment = round.treatment ?? campaign.treatment;
+              const roundControl = round.control ?? campaign.control;
+              const roundMetric = round.metric ?? campaign.metric;
               const roundRuns = round.run_ids
                 .map((runId) => project.runs.find((run) => run.id === runId))
                 .filter((run): run is Project["runs"][number] => run !== undefined);
@@ -559,7 +582,7 @@ export function ExperimentCampaignPanel({
               const minimumPairCount = numberFrom(round.result_summary.minimum_pairs) ?? minimumPairs;
               const meanDifference = numberFrom(round.result_summary.mean_difference);
               const metricSummaries = recordFrom(round.result_summary.paired_metric_summaries);
-              const primaryMetric = recordFrom(metricSummaries?.[campaign.metric]);
+              const primaryMetric = recordFrom(metricSummaries?.[roundMetric]);
               const treatmentMean = numberFrom(primaryMetric?.treatment_mean);
               const controlMean = numberFrom(primaryMetric?.control_mean);
               const positiveFraction = numberFrom(primaryMetric?.positive_pair_fraction);
@@ -584,15 +607,17 @@ export function ExperimentCampaignPanel({
                     <b>{phaseLabel(round.phase)}</b>
                     <em>{roundStatusLabel(round.status)}</em>
                   </div>
+                  <p className="eyebrow">绑定创新点：{roundHypothesis?.title ?? round.hypothesis_id}</p>
                   <h4>{round.objective}</h4>
                   <p className="round-rationale">{round.rationale}</p>
 
                   <div className="round-section round-design">
                     <b>本轮做什么</b>
-                    <p>{describeRoundScope(roundRuns, campaign.treatment, campaign.control)}</p>
+                    <p>{describeRoundScope(roundRuns, roundTreatment, roundControl)}</p>
                   </div>
 
                   <dl className="round-progress">
+                    <div><dt>内部迭代</dt><dd>{round.completed_iterations ?? 0}/3</dd></div>
                     <div><dt>计划运行</dt><dd>{plannedRuns}</dd></div>
                     <div><dt>已结束</dt><dd>{terminalRuns}/{plannedRuns}</dd></div>
                     <div><dt>验证通过</dt><dd>{verifiedRuns}</dd></div>
@@ -605,20 +630,20 @@ export function ExperimentCampaignPanel({
                     <div className="run-groups">
                       {runGroups.map((runs) => {
                         const [referenceRun] = runs;
-                        const treatmentRun = runs.find((run) => run.selection_strategy === campaign.treatment);
-                        const controlRun = runs.find((run) => run.selection_strategy === campaign.control);
-                        const comparable = treatmentRun?.metrics[campaign.metric] !== undefined
-                          && controlRun?.metrics[campaign.metric] !== undefined;
+                        const treatmentRun = runs.find((run) => run.selection_strategy === roundTreatment);
+                        const controlRun = runs.find((run) => run.selection_strategy === roundControl);
+                        const comparable = treatmentRun?.metrics[roundMetric] !== undefined
+                          && controlRun?.metrics[roundMetric] !== undefined;
                         const verifiedPair = treatmentRun?.verified && controlRun?.verified;
                         const difference = comparable && treatmentRun && controlRun
-                          ? treatmentRun.metrics[campaign.metric] - controlRun.metrics[campaign.metric]
+                          ? treatmentRun.metrics[roundMetric] - controlRun.metrics[roundMetric]
                           : null;
                         return (
                           <div className="run-group" key={`${referenceRun.category}-${referenceRun.shots}-${referenceRun.seed}`}>
                             <div className="run-group-head">
                               <b>{referenceRun.category} · K={referenceRun.shots} · 随机种子：{referenceRun.seed}</b>
                               <span>
-                                左侧：{strategyCodeLabel(campaign.control)}（对照） · 右侧：{strategyCodeLabel(campaign.treatment)}（实验）
+                                  左侧：{strategyCodeLabel(roundControl)}（对照） · 右侧：{strategyCodeLabel(roundTreatment)}（实验）
                               </span>
                             </div>
                             <div className="run-steps">
@@ -628,12 +653,12 @@ export function ExperimentCampaignPanel({
                                   .filter((item): item is { key: string; value: string } => item.value !== null);
                                 return (
                                   <section className={`run-step ${run.status}`} key={run.id}>
-                                    <div className="run-step-head">
-                                      <div className="run-strategy-label">
-                                        <span className="run-side-label">{index === 0 ? "左侧" : "右侧"}</span>
-                                        <b>{strategyRoleLabel(run.selection_strategy, campaign.treatment, campaign.control)}</b>
-                                      </div>
-                                      <em>{runStatusLabel(run.status)}</em>
+                                  <div className="run-step-head">
+                                    <div className="run-strategy-label">
+                                      <span className="run-side-label">{index === 0 ? "左侧" : "右侧"}</span>
+                                      <b>{strategyRoleLabel(run.selection_strategy, roundTreatment, roundControl)}</b>
+                                    </div>
+                                      <em>迭代 {run.iteration ?? "—"} · {runStatusLabel(run.status)}</em>
                                     </div>
                                     <small className="run-strategy-description">{strategyLabel(run.selection_strategy)}</small>
                                     <p>
@@ -660,8 +685,8 @@ export function ExperimentCampaignPanel({
                             <div className={`pair-state ${comparable ? "available" : "waiting"}`}>
                               {comparable ? (
                                 <p>
-                                  这一对的原始比较：{campaign.treatment} 的 {metricLabel(campaign.metric)}
-                                  为 {formatScore(treatmentRun?.metrics[campaign.metric])}，{campaign.control} 为 {formatScore(controlRun?.metrics[campaign.metric])}，
+                                  这一对的原始比较：{roundTreatment} 的 {metricLabel(roundMetric)}
+                                  为 {formatScore(treatmentRun?.metrics[roundMetric])}，{roundControl} 为 {formatScore(controlRun?.metrics[roundMetric])}，
                                   差值 {formatSigned(difference)}。{verifiedPair ? "该对已进入正式证据统计。" : "两项结果仍待核验，暂不作为正式结论。"}
                                 </p>
                               ) : <p>这组比较尚未完成：只有两种策略都取得并核验结果后，才能判断支持集选择是否带来差异。</p>}
@@ -676,13 +701,13 @@ export function ExperimentCampaignPanel({
                     <div className="round-section round-result">
                       <b>本轮结果</b>
                       <p>
-                        {campaign.treatment} 的 {campaign.metric} 平均为 {formatMetric(treatmentMean)}，
-                        {campaign.control} 为 {formatMetric(controlMean)}，差值为
+                        {roundTreatment} 的 {roundMetric} 平均为 {formatMetric(treatmentMean)}，
+                        {roundControl} 为 {formatMetric(controlMean)}，差值为
                         <strong className={meanDifference > 0 ? "positive" : meanDifference < 0 ? "negative" : "neutral"}>{formatSigned(meanDifference)}</strong>。
                       </p>
                       <small>
                         本轮新增 {newPairCount} 个有效成对比较
-                        {positivePairs !== null && `，其中 ${positivePairs}/${measuredPairCount} 个 ${campaign.treatment} 表现更好`}
+                        {positivePairs !== null && `，其中 ${positivePairs}/${measuredPairCount} 个 ${roundTreatment} 表现更好`}
                         {categorySummary && `。类别表现：${categorySummary}`}。
                       </small>
                     </div>
@@ -709,7 +734,7 @@ export function ExperimentCampaignPanel({
 
                   {round.feedback && (
                     <div className="round-section feedback-note">
-                      <b>系统决定：{decisionLabel(round.feedback.decision)}</b>
+                      <b>{round.status === "completed" ? "系统决定" : "中途指导排期"}：{decisionLabel(round.feedback.decision)}</b>
                       <p>{round.feedback.rationale}</p>
                       {round.feedback.observed_patterns.length > 0 && <small>观察到：{round.feedback.observed_patterns.join("；")}</small>}
                       <small>下一阶段：{phaseLabel(round.feedback.next_phase)} · 预期新增信息：{Math.round(round.feedback.expected_information_gain * 100)}%</small>

@@ -114,6 +114,7 @@ export interface ExperimentRun {
   selection_strategy: string;
   shots: number;
   seed: number;
+  iteration: number;
   round_id: string | null;
   node_id: string | null;
   phase: string;
@@ -183,6 +184,7 @@ export interface ExperimentNode {
   status: "pending" | "running" | "succeeded" | "failed" | "pruned";
   result_summary: Record<string, unknown>;
   run_ids: string[];
+  iteration: number;
 }
 
 export interface ExperimentRound {
@@ -191,9 +193,16 @@ export interface ExperimentRound {
   phase: string;
   objective: string;
   rationale: string;
+  hypothesis_id: string;
+  treatment: string;
+  control: string;
+  metric: string;
+  iteration_target: 3;
+  completed_iterations: number;
+  guidance_received: boolean;
   node_ids: string[];
   run_ids: string[];
-  status: "planned" | "running" | "ready_for_feedback" | "completed" | "failed";
+  status: "planned" | "running" | "awaiting_guidance" | "ready_for_feedback" | "completed" | "failed";
   result_summary: Record<string, unknown>;
   feedback: ExperimentFeedback | null;
   efficiency: Record<string, number>;
@@ -202,6 +211,7 @@ export interface ExperimentRound {
 export interface ExperimentCampaign {
   id: string;
   hypothesis_id: string;
+  hypothesis_ids: string[];
   dataset_manifest_path: string;
   protocol: string;
   candidate_pool_size: number;
@@ -211,10 +221,11 @@ export interface ExperimentCampaign {
   metric: string;
   device: string;
   max_rounds: number;
+  iterations_per_round: 3;
   max_runs: number;
   exhaustive_run_count: number;
   current_round: number;
-  status: "active" | "awaiting_feedback" | "completed" | "failed";
+  status: "active" | "awaiting_guidance" | "awaiting_feedback" | "completed" | "failed";
   termination_reason: string | null;
   nodes: ExperimentNode[];
   rounds: ExperimentRound[];
@@ -240,8 +251,8 @@ export interface ExperimentGuidanceDecision {
 
 export interface UserGuidanceRecord {
   id: string;
-  scope: "experiment_execution" | "research_cycle";
-  target_action: "execute_next_experiment" | "start_next_research_cycle";
+  scope: "experiment_execution" | "round_iteration" | "research_cycle";
+  target_action: "execute_next_experiment" | "continue_round_iterations" | "start_next_research_cycle";
   text: string;
   research_cycle: number;
   round_id: string | null;
