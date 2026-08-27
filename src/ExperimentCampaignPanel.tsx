@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { EfficiencyChart } from "./EfficiencyChart";
+import { HypothesisEvolutionPanel } from "./HypothesisEvolutionPanel";
 import { MethodSourcePanel } from "./MethodSourcePanel";
 import type { Project } from "./types";
 
@@ -81,6 +83,9 @@ export function ExperimentCampaignPanel({
   const latestExecutionGuidance = [...project.guidance_records]
     .reverse()
     .find((item) => item.scope === "experiment_execution");
+  const currentHypothesis = campaign
+    ? project.hypotheses.find(h => h.id === campaign.hypothesis_id)
+    : undefined;
 
   async function executeWithGuidance() {
     const succeeded = await onExecuteNext(executionGuidance.trim());
@@ -317,12 +322,63 @@ export function ExperimentCampaignPanel({
                     <div className="feedback-note">
                       <b>{round.feedback.advisor} · {round.feedback.decision}</b>
                       <p>{round.feedback.rationale}</p>
+
+                      {round.feedback.reasoning_chain && round.feedback.reasoning_chain.length > 0 && (
+                        <div className="reasoning-chain">
+                          <h5>AI 决策推理过程</h5>
+                          <ol>
+                            {round.feedback.reasoning_chain.map((step, idx) => (
+                              <li key={idx}>
+                                <span className="step-num">{step.step}.</span>
+                                <div className="step-content">
+                                  <span className="observation">{step.observation}</span>
+                                  <span className="arrow">→</span>
+                                  <span className="conclusion">{step.conclusion}</span>
+                                  <span className={`confidence ${step.confidence}`}>{step.confidence}</span>
+                                </div>
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+                      )}
+
+                      {round.feedback.alternative_decisions && round.feedback.alternative_decisions.length > 0 && (
+                        <div className="alternative-decisions">
+                          <h5>考虑过但未选择的方案</h5>
+                          <ul>
+                            {round.feedback.alternative_decisions.map((alt, idx) => (
+                              <li key={idx}>
+                                <code>{alt.decision}</code>: {alt.rejected_reason}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {round.feedback.expected_improvement && (
+                        <div className="expected-improvement">
+                          <h5>预期改进</h5>
+                          <p>
+                            指标：<strong>{round.feedback.expected_improvement.metric}</strong>
+                            {" "}方向：<strong>{round.feedback.expected_improvement.direction === "increase" ? "增加 ↑" : "减少 ↓"}</strong>
+                            {" "}预估变化：<strong>{round.feedback.expected_improvement.estimated_delta > 0 ? "+" : ""}{round.feedback.expected_improvement.estimated_delta.toFixed(4)}</strong>
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </article>
               );
             })}
           </div>
+
+          {campaign && campaign.rounds.length > 0 && (
+            <EfficiencyChart campaign={campaign} />
+          )}
+
+          {currentHypothesis && (
+            <HypothesisEvolutionPanel project={project} />
+          )}
 
           <div className="node-table" role="table" aria-label="实验树节点">
             <div className="node-row node-header" role="row">

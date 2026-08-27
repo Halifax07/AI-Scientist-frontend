@@ -540,3 +540,597 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
   .method-option-note { grid-column: 2; text-align: left; }
   .method-dialog-header { flex-direction: column; }
 }
+
+/* ========== 新增：AI 推理链与反馈优化样式 ========== */
+
+/* AI 决策推理链 */
+.reasoning-chain {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f0f4ff;
+  border-radius: 8px;
+  border-left: 4px solid #4285f4;
+}
+
+.reasoning-chain h5 {
+  margin: 0 0 10px 0;
+  font-size: 12px;
+  color: #1a56db;
+  font-weight: 600;
+}
+
+.reasoning-chain ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.reasoning-chain li {
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.reasoning-chain li:last-child {
+  margin-bottom: 0;
+}
+
+.reasoning-chain .step-num {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  background: #4285f4;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.reasoning-chain .step-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.reasoning-chain .observation {
+  color: #374151;
+}
+
+.reasoning-chain .arrow {
+  color: #4285f4;
+  font-weight: bold;
+}
+
+.reasoning-chain .conclusion {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.reasoning-chain .confidence {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.reasoning-chain .confidence.高 {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.reasoning-chain .confidence.中 {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.reasoning-chain .confidence.低 {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* 备选方案展示 */
+.alternative-decisions {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  border-radius: 8px;
+  border-left: 4px solid #f59e0b;
+}
+
+.alternative-decisions h5 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #92400e;
+  font-weight: 600;
+}
+
+.alternative-decisions ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.alternative-decisions li {
+  font-size: 11px;
+  margin-bottom: 4px;
+  color: #78350f;
+}
+
+.alternative-decisions code {
+  background: #fef3c7;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+/* 预期改进展示 */
+.expected-improvement {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #ecfdf5;
+  border-radius: 6px;
+  border-left: 3px solid #10b981;
+}
+
+.expected-improvement h5 {
+  margin: 0 0 4px 0;
+  font-size: 11px;
+  color: #065f46;
+  font-weight: 600;
+}
+
+.expected-improvement p {
+  margin: 0;
+  font-size: 11px;
+  color: #047857;
+}
+
+/* ========== 效率图表样式 ========== */
+.efficiency-chart {
+  margin-top: 16px;
+  padding: 16px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.efficiency-chart h4 {
+  margin: 0 0 14px 0;
+  font-size: 15px;
+  color: #1f2937;
+}
+
+.efficiency-chart .chart-area {
+  display: flex;
+  height: 160px;
+  margin-bottom: 14px;
+}
+
+.efficiency-chart .y-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 50px;
+  font-size: 9px;
+  color: #6b7280;
+  text-align: right;
+  padding-right: 6px;
+}
+
+.efficiency-chart .bars-container {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  align-items: flex-end;
+  border-bottom: 1px solid #e5e7eb;
+  border-left: 1px solid #e5e7eb;
+  padding: 0 8px;
+}
+
+.efficiency-chart .bar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.efficiency-chart .bar-wrapper {
+  width: 36px;
+  height: 120px;
+  display: flex;
+  align-items: flex-end;
+  background: #f9fafb;
+  border-radius: 4px 4px 0 0;
+}
+
+.efficiency-chart .efficiency-bar {
+  width: 100%;
+  min-height: 12px;
+  border-radius: 4px 4px 0 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 3px;
+  transition: height 0.4s ease;
+}
+
+.efficiency-chart .efficiency-bar.high {
+  background: linear-gradient(to top, #22c55e, #86efac);
+}
+
+.efficiency-chart .efficiency-bar.medium {
+  background: linear-gradient(to top, #eab308, #fde047);
+}
+
+.efficiency-chart .efficiency-bar.low {
+  background: linear-gradient(to top, #ef4444, #fca5a5);
+}
+
+.efficiency-chart .bar-value {
+  font-size: 9px;
+  font-weight: 600;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.efficiency-chart .round-label {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.efficiency-chart .efficiency-table {
+  margin: 12px 0;
+}
+
+.efficiency-chart .efficiency-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.efficiency-chart .efficiency-table th,
+.efficiency-chart .efficiency-table td {
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.efficiency-chart .efficiency-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.efficiency-chart .efficiency-table .savings {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.efficiency-chart .confidence-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.efficiency-chart .confidence-badge.high {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.efficiency-chart .confidence-badge.medium {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.efficiency-chart .confidence-badge.low {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.efficiency-chart .efficiency-summary {
+  padding: 10px 12px;
+  background: #eff6ff;
+  border-radius: 6px;
+  border-left: 4px solid #3b82f6;
+}
+
+.efficiency-chart .efficiency-summary h5 {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  color: #1e40af;
+}
+
+.efficiency-chart .efficiency-summary ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #1e40af;
+}
+
+.efficiency-chart .efficiency-summary strong {
+  color: #1d4ed8;
+}
+
+/* ========== 假说演进面板样式 ========== */
+.hypothesis-evolution-panel {
+  margin-top: 16px;
+  padding: 16px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.hypothesis-evolution-panel h3 {
+  margin: 0 0 14px 0;
+  font-size: 15px;
+  color: #1f2937;
+}
+
+.evolution-timeline {
+  position: relative;
+  padding-left: 30px;
+}
+
+.evolution-timeline::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(to bottom, #3b82f6, #22c55e);
+  border-radius: 2px;
+}
+
+.evolution-node {
+  position: relative;
+  margin-bottom: 18px;
+  padding: 14px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border-left: 4px solid #d1d5db;
+}
+
+.evolution-node.supported {
+  border-left-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.evolution-node.rejected {
+  border-left-color: #ef4444;
+  background: #fef2f2;
+}
+
+.evolution-node.inconclusive {
+  border-left-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.evolution-node.initial,
+.evolution-node.current {
+  border-left-color: #3b82f6;
+}
+
+.evolution-node .node-marker {
+  position: absolute;
+  left: -36px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #3b82f6;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.evolution-node.supported .node-marker { background: #22c55e; }
+.evolution-node.rejected .node-marker { background: #ef4444; }
+.evolution-node.inconclusive .node-marker { background: #f59e0b; }
+
+.evolution-node .node-content h4 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.evolution-node .claim,
+.evolution-node .statement {
+  margin: 6px 0;
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.evolution-node .verdict-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.evolution-node.supported .verdict-badge {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.evolution-node.rejected .verdict-badge {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.evolution-node.inconclusive .verdict-badge {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.evolution-node .metrics-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.evolution-node .metric {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.evolution-node .metric strong {
+  color: #1f2937;
+}
+
+.evolution-node .hypothesis-meta {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 8px;
+}
+
+.evolution-node .hypothesis-meta code {
+  background: #e5e7eb;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.evolution-node .boundary-conditions {
+  margin-top: 8px;
+  padding: 8px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.evolution-node .boundary-conditions strong {
+  color: #374151;
+}
+
+.evolution-node .boundary-conditions ul {
+  margin: 4px 0 0 16px;
+  padding: 0;
+}
+
+.evolution-node .boundary-conditions li {
+  color: #6b7280;
+  margin-bottom: 2px;
+}
+
+.evolution-node .current-claim {
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+
+.evolution-node .current-claim strong {
+  color: #1f2937;
+}
+
+.evolution-node .final-verdict p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.evolution-node .final-verdict .supported { color: #166534; }
+.evolution-node .final-verdict .rejected { color: #991b1b; }
+.evolution-node .final-verdict .inconclusive { color: #854d0e; }
+.evolution-node .final-verdict .pending { color: #6b7280; }
+
+/* ========== 统计显著性展示样式 ========== */
+.significance-display {
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.significance-display .sig-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.significance-display .sig-header h5 {
+  margin: 0;
+  font-size: 12px;
+  color: #374151;
+}
+
+.significance-display .sig-level {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.significance-display .sig-level.highly-significant {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.significance-display .sig-level.significant {
+  background: #bbf7d0;
+  color: #15803d;
+}
+
+.significance-display .sig-level.marginally-significant {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.significance-display .sig-level.not-significant {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.significance-display .sig-level.unknown {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+.significance-display .sig-metrics {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.significance-display .metric {
+  font-size: 11px;
+}
+
+.significance-display .metric .label {
+  color: #6b7280;
+  display: block;
+}
+
+.significance-display .metric .value {
+  color: #1f2937;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.significance-display .sig-interpretation p {
+  margin: 0;
+  font-size: 11px;
+  color: #4b5563;
+}

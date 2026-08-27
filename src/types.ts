@@ -123,12 +123,35 @@ export interface DatasetAudit {
   audited_at: string;
 }
 
+export interface ReasoningStep {
+  step: number;
+  observation: string;
+  conclusion: string;
+  confidence: "高" | "中" | "低";
+}
+
+export interface AlternativeDecision {
+  decision: string;
+  rejected_reason: string;
+}
+
+export interface ExpectedImprovement {
+  metric: string;
+  direction: "increase" | "decrease";
+  estimated_delta: number;
+  confidence: "高" | "中" | "低";
+}
+
 export interface ExperimentFeedback {
   advisor: string;
-  decision: "expand" | "replicate" | "diagnose" | "stop";
+  decision: "expand" | "replicate" | "diagnose" | "stop" | "adapt_k" | "focus_category" | "ablate" | "early_stop";
   rationale: string;
+  reasoning_chain: ReasoningStep[];
+  alternative_decisions: AlternativeDecision[];
+  expected_improvement: ExpectedImprovement | null;
   observed_patterns: string[];
   next_phase: string;
+  strategy_adjustment: Record<string, unknown>;
   expected_information_gain: number;
   stop: boolean;
 }
