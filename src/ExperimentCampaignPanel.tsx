@@ -104,6 +104,27 @@ function metricLabel(value: string) {
   }[value] ?? value.replaceAll("_", " "));
 }
 
+function hypothesisHasRunnableStrategies(
+  project: Project,
+  hypothesis: Project["hypotheses"][number],
+) {
+  if (hypothesis.execution_readiness === "executable") return true;
+  const contract = hypothesis.analysis_contract;
+  if (!contract) return false;
+  const builtinStrategies = new Set(["random", "k_center"]);
+  return [contract.treatment, contract.control].every((name) =>
+    builtinStrategies.has(name)
+    || (project.method_implementations ?? []).some((implementation) =>
+      implementation.kind === "selection_strategy"
+      && implementation.hypothesis_id === hypothesis.id
+      && implementation.name === name
+      && implementation.status === "approved"
+      && implementation.static_validation?.passed === true
+      && implementation.smoke_result?.passed === true,
+    ),
+  );
+}
+
 function formatScore(value: number | undefined) {
   return value === undefined ? null : `${(value * 100).toFixed(1)}%`;
 }
@@ -223,8 +244,10 @@ export function ExperimentCampaignPanel({
       .map((round) => round.hypothesis_id),
   ]);
   const firstRunnableHypothesisId = project.experiment_plan?.hypothesis_ids.find(
-    (id) => project.hypotheses.find((hypothesis) => hypothesis.id === id)?.execution_readiness
-      === "executable",
+    (id) => {
+      const hypothesis = project.hypotheses.find((item) => item.id === id);
+      return hypothesis ? hypothesisHasRunnableStrategies(project, hypothesis) : false;
+    },
   ) ?? null;
 
   async function continueWithGuidance() {
@@ -332,10 +355,11 @@ export function ExperimentCampaignPanel({
                   .mean_difference,
               )
               : null;
+            const hasRunnableStrategies = hypothesisHasRunnableStrategies(project, hypothesis);
             const canStart = Boolean(
               audit?.verified
               && project.stage === "experiments_queued"
-              && hypothesis.execution_readiness === "executable"
+              && hasRunnableStrategies
               && isApproved
               && !isCompleted
               && (!campaign || campaign.status === "completed"),
@@ -344,7 +368,7 @@ export function ExperimentCampaignPanel({
               ? "已完成实验"
               : isCurrent
                 ? "正在验证"
-                : hypothesis.execution_readiness === "requires_implementation"
+                : !hasRunnableStrategies
                   ? "需要先实现方法"
                   : isApproved
                     ? "已预注册，等待实验"
