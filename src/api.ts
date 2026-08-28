@@ -74,19 +74,21 @@ export const api = {
   initializeCampaign: (
     projectId: string,
     datasetManifestPath: string,
+    hypothesisId: string,
     detector = "anomalydino",
   ) =>
     request<Project>(`/api/v1/projects/${projectId}/experiment-campaign/initialize`, {
       method: "POST",
       body: JSON.stringify({
         dataset_manifest_path: datasetManifestPath,
+        hypothesis_id: hypothesisId,
         detector,
         device: "cuda:0",
         max_rounds: 3,
         max_runs: 24,
       }),
     }),
-  executeNext: (projectId: string, userGuidance: string, candidatePoolSize = 30) =>
+  executeNext: (projectId: string, userGuidance?: string, candidatePoolSize = 30) =>
     request<ExecuteNextResponse>(
       `/api/v1/projects/${projectId}/experiment-campaign/execute-next`,
       {
@@ -95,13 +97,14 @@ export const api = {
           candidate_pool_size: candidatePoolSize,
           timeout_seconds: 3600,
           force_embeddings: false,
-          user_guidance: userGuidance.trim(),
+          user_guidance: userGuidance?.trim() || null,
         }),
       },
     ),
-  reviewRound: (projectId: string) =>
+  reviewRound: (projectId: string, userGuidance?: string) =>
     request<Project>(`/api/v1/projects/${projectId}/experiment-campaign/review`, {
       method: "POST",
+      body: JSON.stringify(userGuidance ? { user_guidance: userGuidance.trim() } : {}),
     }),
   finalizeResults: (projectId: string) =>
     request<Project>(`/api/v1/projects/${projectId}/results/finalize`, {
