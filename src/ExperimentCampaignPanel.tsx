@@ -2,7 +2,7 @@ import { useState } from "react";
 import { EfficiencyChart } from "./EfficiencyChart";
 import { HypothesisEvolutionPanel } from "./HypothesisEvolutionPanel";
 import { MethodSourcePanel } from "./MethodSourcePanel";
-import type { Project } from "./types";
+import type { ExperimentProgressEvent, Project } from "./types";
 
 interface Props {
   project: Project;
@@ -13,6 +13,8 @@ interface Props {
   onPlan: (aiGenerateStrategy: boolean, aiGenerateDetector: boolean) => void;
   onApprove: () => void;
   onInitialize: () => void;
+  streamEvents: ExperimentProgressEvent[];
+  onExecuteParallel: () => Promise<boolean>;
   onAdvanceRound: () => Promise<boolean>;
   onContinueRound: (guidance: string) => Promise<boolean>;
   onReviewRound: () => Promise<boolean>;
@@ -80,6 +82,27 @@ function runStatusLabel(value: Project["runs"][number]["status"]) {
   }[value]);
 }
 
+function progressEventLabel(value: string) {
+  return ({
+    campaign_started: "实验批次开始",
+    batch_completed: "本次批次完成",
+    run_queued: "Run 已排队",
+    run_started: "Run 开始",
+    run_finished: "Run 完成",
+    round_ready: "Round 可分析",
+    round_completed: "Round 汇总完成",
+    campaign_completed: "实验批次完成",
+    results_locked: "结果锁定",
+    statistics_completed: "统计分析完成",
+    innovation_review_completed: "创新审查完成",
+    hypothesis_revision_ready: "修订假设待排名",
+    report_ready: "研究报告就绪",
+    finalization_failed: "结果收尾失败",
+    campaign_failed: "实验批次失败",
+    stream_completed: "流式输出结束",
+  }[value] ?? value);
+}
+
 function strategyLabel(value: string) {
   return ({
     random: "随机抽取支持样本",
@@ -118,7 +141,7 @@ function hypothesisHasRunnableStrategies(
       implementation.kind === "selection_strategy"
       && implementation.hypothesis_id === hypothesis.id
       && implementation.name === name
-      && implementation.status === "approved"
+      && ["validated", "approved"].includes(implementation.status)
       && implementation.static_validation?.passed === true
       && implementation.smoke_result?.passed === true,
     ),
@@ -178,6 +201,8 @@ export function ExperimentCampaignPanel({
   onPlan,
   onApprove,
   onInitialize,
+  streamEvents,
+  onExecuteParallel,
   onAdvanceRound,
   onContinueRound,
   onReviewRound,
@@ -189,7 +214,11 @@ export function ExperimentCampaignPanel({
   const [aiGenerateStrategy, setAiGenerateStrategy] = useState(false);
   const [aiGenerateDetector, setAiGenerateDetector] = useState(false);
   const audit = project.dataset_audits.at(-1) ?? null;
-  const campaign = project.experiment_campaign;
+  const liveCampaign = project.experiment_campaign;
+  // Keep the latest completed campaign visible after result finalisation.  The
+  // backend archives it before innovation review so no round evidence vanishes
+  // from the read-only competition/report view.
+  const campaign = liveCampaign ?? project.experiment_campaign_history.at(-1) ?? null;
   const plannedHypothesisId = project.experiment_plan?.hypothesis_ids.at(0) ?? null;
   const campaignHypothesis = campaign
     ? project.hypotheses.find((hypothesis) => hypothesis.id === campaign.hypothesis_id) ?? null
@@ -197,7 +226,10 @@ export function ExperimentCampaignPanel({
       ?? project.hypotheses.find((hypothesis) => ["approved", "shortlisted"].includes(hypothesis.status))
       ?? project.hypotheses[0]
       ?? null;
-  const campaignRuns = project.runs.filter((run) => run.round_id !== null);
+  const campaignRunIds = new Set(
+    campaign?.rounds.flatMap((round) => round.run_ids) ?? [],
+  );
+  const campaignRuns = project.runs.filter((run) => campaignRunIds.has(run.id));
   const terminalRuns = campaignRuns.filter((run) =>
     ["succeeded", "failed"].includes(run.status),
   ).length;
@@ -235,7 +267,7 @@ export function ExperimentCampaignPanel({
   const approvedHypothesisIds = new Set(project.experiment_plan?.hypothesis_ids ?? []);
   const allCampaigns = [
     ...project.experiment_campaign_history,
-    ...(campaign ? [campaign] : []),
+    ...(liveCampaign ? [liveCampaign] : []),
   ];
   const allRounds = allCampaigns.flatMap((item) => item.rounds);
   const completedHypothesisIds = new Set([
@@ -249,6 +281,11 @@ export function ExperimentCampaignPanel({
       return hypothesis ? hypothesisHasRunnableStrategies(project, hypothesis) : false;
     },
   ) ?? null;
+  const latestStreamEvent = streamEvents.at(-1);
+  const latestProgressEvent = [...streamEvents]
+    .reverse()
+    .find((event) => event.progress !== null && event.progress !== undefined);
+  const streamProgress = latestProgressEvent?.progress ?? 0;
 
   async function continueWithGuidance() {
     const succeeded = await onContinueRound(roundGuidance.trim());
@@ -267,7 +304,7 @@ export function ExperimentCampaignPanel({
           <h3>科学实验任务规划与反馈迭代</h3>
           <p>
             真实 MVTec 数据 → DINOv2 支持集表征 → AnomalyDINO 本机运行 → 成对统计 →
-            Qwen 调整本 Round 后两次迭代并切换下一个创新点。每个 Round 都写入 Research Ledger。
+            每个创新点一个 Round 并行执行三次自动迭代。运行状态通过流式事件实时展示并写入 Research Ledger。
           </p>
         </div>
         <span className={`campaign-state ${campaign?.status ?? "setup"}`}>
@@ -333,11 +370,15 @@ export function ExperimentCampaignPanel({
       <div className="validation-portfolio">
         <div className="section-title">
           <h4>创新点实验验证队列</h4>
-          <span>一个创新点 · 一套指导 · 一组结果</span>
+          <span>每个创新点一个 Round · 三次自动迭代 · 独立统计</span>
         </div>
         <div className="validation-track-grid">
           {project.hypotheses.map((hypothesis, index) => {
-            const isCurrent = campaign?.hypothesis_id === hypothesis.id;
+            const isCurrent = campaign
+              ? campaign.execution_mode === "parallel"
+                ? campaign.selected_hypothesis_ids.includes(hypothesis.id)
+                : campaign.hypothesis_id === hypothesis.id
+              : false;
             const isCompleted = completedHypothesisIds.has(hypothesis.id);
             const isApproved = approvedHypothesisIds.has(hypothesis.id);
             const trackRound = allRounds
@@ -402,7 +443,7 @@ export function ExperimentCampaignPanel({
                 )}
                 {canStart && hypothesis.id === firstRunnableHypothesisId && (
                   <button disabled={busy} onClick={onInitialize}>
-                    启动全部创新点的闭环实验
+                    启动所选创新点的闭环实验
                   </button>
                 )}
               </article>
@@ -468,18 +509,18 @@ export function ExperimentCampaignPanel({
             </button>
           )}
           {project.stage === "awaiting_experiment_approval" && (
-            <button disabled={busy || !audit.verified} onClick={onApprove}>
-              {busy ? "正在批准…" : "批准预注册实验并冻结边界"}
+            <button disabled={busy || !audit.verified} onClick={onInitialize}>
+              {busy ? "正在自动预注册并启动…" : "自动预注册并并行执行已选创新点"}
             </button>
           )}
           <small>
-            数据审计完成后，系统会按预注册顺序为每个创新点建立一个 Round；每个 Round 固定自动迭代三次。
+            数据审计完成后，系统会按用户优先级为每个已选创新点建立一个 Round；所有 Round 并行执行，内部自动迭代三次。
           </small>
         </div>
       ) : (
         <>
           <div className="campaign-metrics">
-            <article><span>当前轮次</span><strong>{campaign.current_round}/{campaign.max_rounds}</strong></article>
+              <article><span>当前轮次</span><strong>{campaign.current_round}/{campaign.max_rounds}</strong><small>{campaign.execution_mode === "parallel" ? `并行度 ${campaign.parallelism}` : "串行"}</small></article>
             <article><span>运行进度</span><strong>已结束 {terminalRuns}/{selectedRuns}</strong><small>成功 {successfulRuns} · 失败 {failedCampaignRuns} · 待执行 {Math.max(selectedRuns - terminalRuns, 0)} · 已核验 {verifiedRuns}</small></article>
             <article><span>累计有效配对</span><strong>{cumulativePairCount}/{minimumPairs}</strong><small>Image Δ {cumulativeEffect?.toFixed(4) ?? "—"}</small></article>
             <article><span>避免穷举</span><strong>{avoidedRuns}</strong><small>共 {campaign.exhaustive_run_count} 个候选 run</small></article>
@@ -492,22 +533,40 @@ export function ExperimentCampaignPanel({
               <span>{campaign.next_action}</span>
               <small>
                 {campaign.status === "active"
-                  ? "系统正在自动完成当前 Round 的三次迭代；首次运行会生成并缓存 DINOv2 正常样本表征。"
+                  ? campaign.execution_mode === "parallel"
+                    ? "系统正在并行完成所有已选创新点的三次预注册迭代；首次运行会生成并缓存 DINOv2 正常样本表征。"
+                    : "系统正在自动完成当前 Round 的三次迭代；首次运行会生成并缓存 DINOv2 正常样本表征。"
                   : campaign.status === "awaiting_guidance"
                     ? "第 1 次迭代已完成，请提交本 Round 唯一指导，系统将自动完成第 2、3 次迭代。"
                   : campaign.status === "awaiting_feedback"
-                    ? "本 Round 三次迭代已结束，系统将汇总当前创新点并进入下一个创新点。"
+                    ? campaign.execution_mode === "parallel"
+                      ? "所有已结束 Round 将并行交给 AI Scientist 汇总，并进入统一统计分析。"
+                      : "本 Round 三次迭代已结束，系统将汇总当前创新点并进入下一个创新点。"
                     : `实验已按确定性边界停止（${campaign.termination_reason ?? "stopping condition"}），可以锁定结果进入正式统计。`}
             </small>
             </div>
             {campaign.status === "active" && (
-              <button disabled={busy} onClick={() => void onAdvanceRound()}>
-                {busy ? "自动迭代执行中…" : "继续自动执行当前 Round"}
+              <button
+                disabled={busy}
+                onClick={() => void (campaign.execution_mode === "parallel" ? onExecuteParallel() : onAdvanceRound())}
+              >
+                {busy
+                  ? "实验流执行中…"
+                  : campaign.execution_mode === "parallel"
+                    ? "继续流式并行执行"
+                    : "继续自动执行当前 Round"}
               </button>
             )}
             {campaign.status === "awaiting_feedback" && (
-              <button disabled={busy} onClick={() => void onReviewRound()}>
-                {busy ? "Qwen 正在汇总…" : "汇总本 Round 并进入下一创新点"}
+              <button
+                disabled={busy}
+                onClick={() => void (campaign.execution_mode === "parallel" ? onExecuteParallel() : onReviewRound())}
+              >
+                {busy
+                  ? "AI 正在汇总…"
+                  : campaign.execution_mode === "parallel"
+                    ? "汇总并行 Round 结果"
+                    : "汇总本 Round 并进入下一创新点"}
               </button>
             )}
             {campaign.status === "completed" && project.stage === "experiments_queued" && (
@@ -516,6 +575,38 @@ export function ExperimentCampaignPanel({
               </button>
             )}
           </div>
+
+          {streamEvents.length > 0 && (
+            <div className="stream-console" aria-live="polite">
+              <div className="stream-console-head">
+                <b>实验流实时进度</b>
+                <span>
+                  {latestStreamEvent ? progressEventLabel(latestStreamEvent.event_type) : "等待事件"}
+                  {latestProgressEvent?.progress !== null
+                    && latestProgressEvent?.progress !== undefined
+                    ? ` · ${Math.round(streamProgress * 100)}%`
+                    : ""}
+                </span>
+              </div>
+              <div
+                className="stream-progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(streamProgress * 100)}
+              >
+                <span style={{ width: `${Math.round(streamProgress * 100)}%` }} />
+              </div>
+              <ol className="stream-events">
+                {streamEvents.slice(-30).reverse().map((event, index) => (
+                  <li className={event.status === "failed" ? "failed" : ""} key={`${event.id ?? "transport"}-${event.sequence ?? index}`}>
+                    <b>{event.sequence ? `#${event.sequence} · ` : ""}{progressEventLabel(event.event_type)}</b>
+                    <span>{event.message}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
           {campaign.status === "awaiting_guidance" && (
             <div className="human-guidance-box execution-guidance">

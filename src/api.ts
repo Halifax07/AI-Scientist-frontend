@@ -1,4 +1,10 @@
-import type { ExecuteNextResponse, Health, Project } from "./types";
+import type {
+  ExecuteNextResponse,
+  ExperimentProgressEvent,
+  Health,
+  HypothesisRankingInput,
+  Project,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -19,7 +25,7 @@ export const api = {
   listProjects: () => request<Project[]>("/api/v1/projects"),
   createDemo: () => request<Project>("/api/v1/projects/demo", { method: "POST" }),
   createIdeation: async (prompt: string) => {
-    let project = await request<Project>("/api/v1/projects", {
+    const project = await request<Project>("/api/v1/projects", {
       method: "POST",
       body: JSON.stringify({
         spec: {
@@ -35,15 +41,18 @@ export const api = {
         },
       }),
     });
-
-    const ideationTarget: Project["stage"] = "hypotheses_reviewed";
-    for (let step = 0; step < 8 && project.stage !== ideationTarget; step += 1) {
-      project = await request<Project>(`/api/v1/projects/${project.id}/advance`, {
-        method: "POST",
-      });
-    }
-    return project;
+    return request<Project>(`/api/v1/projects/${project.id}/automation/ideation`, {
+      method: "POST",
+    });
   },
+  rankHypotheses: (
+    projectId: string,
+    rankings: HypothesisRankingInput[],
+    autoPreregister = true,
+  ) => request<Project>(`/api/v1/projects/${projectId}/hypotheses/rank`, {
+    method: "POST",
+    body: JSON.stringify({ rankings, auto_preregister: autoPreregister }),
+  }),
   advance: (projectId: string) =>
     request<Project>(`/api/v1/projects/${projectId}/advance`, { method: "POST" }),
   startNextResearchCycle: (projectId: string, userGuidance: string) =>
@@ -88,6 +97,26 @@ export const api = {
         max_runs: 24,
       }),
     }),
+  autoStartCampaign: (
+    projectId: string,
+    datasetManifestPath: string,
+    hypothesisId: string,
+    selectedHypothesisIds: string[],
+    detector = "anomalydino",
+    maxParallelRuns?: number,
+  ) => request<Project>(`/api/v1/projects/${projectId}/experiment-campaign/auto-start`, {
+    method: "POST",
+    body: JSON.stringify({
+      dataset_manifest_path: datasetManifestPath,
+      hypothesis_id: hypothesisId,
+      selected_hypothesis_ids: selectedHypothesisIds,
+      detector,
+      device: "cuda:0",
+      max_rounds: Math.max(selectedHypothesisIds.length, 1),
+      max_runs: 240,
+      max_parallel_runs: maxParallelRuns,
+    }),
+  }),
   executeNext: (projectId: string, userGuidance?: string, candidatePoolSize = 30) =>
     request<ExecuteNextResponse>(
       `/api/v1/projects/${projectId}/experiment-campaign/execute-next`,
@@ -101,6 +130,95 @@ export const api = {
         }),
       },
     ),
+  executeParallelStream: async (
+    projectId: string,
+    options: {
+      runIds?: string[];
+      maxParallelRuns?: number;
+      timeoutSeconds?: number;
+      forceEmbeddings?: boolean;
+      autoReview?: boolean;
+    },
+    onEvent?: (event: ExperimentProgressEvent) => void,
+  ): Promise<Project> => {
+    const response = await fetch(`${API_BASE}/api/v1/projects/${projectId}/experiment-campaign/execute-stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({
+        run_ids: options.runIds ?? null,
+        max_parallel_runs: options.maxParallelRuns ?? null,
+        timeout_seconds: options.timeoutSeconds ?? 3600,
+        force_embeddings: options.forceEmbeddings ?? false,
+        auto_review: options.autoReview ?? true,
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(body.detail ?? response.statusText);
+    }
+    if (!response.body) throw new Error("实验流没有返回可读取的响应体");
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let latest: Project | null = null;
+    const consume = (chunk: string) => {
+      buffer += chunk;
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        const line = frame.split("\n").find((item) => item.startsWith("data:"));
+        if (!line) continue;
+        const event = JSON.parse(line.slice(5).trim()) as ExperimentProgressEvent;
+        if (event.project) latest = event.project;
+        onEvent?.(event);
+      }
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      consume(decoder.decode(value, { stream: true }));
+    }
+    consume(decoder.decode());
+    if (!latest) latest = await request<Project>(`/api/v1/projects/${projectId}`);
+    return latest;
+  },
+  replayExperimentEvents: async (
+    projectId: string,
+    after = 0,
+    onEvent?: (event: ExperimentProgressEvent) => void,
+  ): Promise<Project> => {
+    const response = await fetch(
+      `${API_BASE}/api/v1/projects/${projectId}/experiment-campaign/events?after=${after}`,
+      { headers: { Accept: "text/event-stream" } },
+    );
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(body.detail ?? response.statusText);
+    }
+    if (!response.body) throw new Error("实验进度回放没有返回可读取的响应体");
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const consume = (chunk: string) => {
+      buffer += chunk;
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        const line = frame.split("\n").find((item) => item.startsWith("data:"));
+        if (!line) continue;
+        onEvent?.(JSON.parse(line.slice(5).trim()) as ExperimentProgressEvent);
+      }
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      consume(decoder.decode(value, { stream: true }));
+    }
+    consume(decoder.decode());
+    return request<Project>(`/api/v1/projects/${projectId}`);
+  },
   reviewRound: (projectId: string, userGuidance?: string) =>
     request<Project>(`/api/v1/projects/${projectId}/experiment-campaign/review`, {
       method: "POST",
