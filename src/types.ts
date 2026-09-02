@@ -63,6 +63,10 @@ export interface Hypothesis {
   parent_hypothesis_id: string | null;
   execution_readiness: "executable" | "requires_implementation";
   experiment_guidance: string[];
+  user_selected: boolean | null;
+  user_priority: number | null;
+  user_score: number | null;
+  user_review_note: string | null;
 }
 
 export interface ExperimentPlan {
@@ -107,6 +111,7 @@ export interface AnalysisFinding {
 
 export interface ExperimentRun {
   id: string;
+  hypothesis_id: string;
   dataset: string;
   category: string;
   detector: string;
@@ -225,11 +230,57 @@ export interface ExperimentCampaign {
   max_runs: number;
   exhaustive_run_count: number;
   current_round: number;
+  execution_mode: "sequential" | "parallel";
+  parallelism: number;
+  selected_hypothesis_ids: string[];
   status: "active" | "awaiting_guidance" | "awaiting_feedback" | "completed" | "failed";
   termination_reason: string | null;
   nodes: ExperimentNode[];
   rounds: ExperimentRound[];
   next_action: string;
+}
+
+export interface ExperimentProgressEvent {
+  /** Persisted events have both fields; transport heartbeats do not. */
+  id?: string;
+  sequence?: number;
+  event_type:
+    | "campaign_started"
+    | "batch_completed"
+    | "run_queued"
+    | "run_started"
+    | "run_finished"
+    | "round_guidance_required"
+    | "round_ready"
+    | "round_completed"
+    | "campaign_completed"
+    | "results_locked"
+    | "statistics_completed"
+    | "innovation_review_completed"
+    | "hypothesis_revision_ready"
+    | "report_ready"
+    | "finalization_failed"
+    | "campaign_failed"
+    | "stream_completed"
+    | "heartbeat";
+  message: string;
+  campaign_id?: string | null;
+  round_id?: string | null;
+  hypothesis_id?: string | null;
+  run_id?: string | null;
+  status?: string | null;
+  progress?: number | null;
+  payload?: Record<string, unknown>;
+  project?: Project;
+  created_at?: string;
+}
+
+export interface HypothesisRankingInput {
+  hypothesis_id: string;
+  selected: boolean;
+  priority: number;
+  score: number;
+  note?: string | null;
 }
 
 export interface ExecutionRecord {
@@ -325,6 +376,7 @@ export interface Project {
   innovations: InnovationCandidate[];
   method_implementations?: MethodImplementation[];
   events: WorkflowEvent[];
+  experiment_progress: ExperimentProgressEvent[];
 }
 
 export interface Health {

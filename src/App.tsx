@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { ExperimentCampaignPanel } from "./ExperimentCampaignPanel";
-import type { Health, Project, Stage } from "./types";
+import { HypothesisRankingPanel } from "./HypothesisRankingPanel";
+import type {
+  ExperimentProgressEvent,
+  Health,
+  HypothesisRankingInput,
+  Project,
+  Stage,
+} from "./types";
 
 /**
  * 勾选了“让 AI 生成”时，点击「生成预注册实验」调用生成接口，
@@ -17,6 +24,7 @@ async function planWithGeneratedMethods(
 ): Promise<Project> {
   const rankedHypotheses = [...project.hypotheses]
     .filter((item) => item.analysis_contract
+      && item.user_selected !== false
       && ["selection_main_effect", "query_adaptation"].includes(item.analysis_contract.kind))
     .sort((a, b) => (b.score?.elo ?? 0) - (a.score?.elo ?? 0));
   const detectorCompatible = aiGenerateDetector
@@ -137,9 +145,10 @@ export default function App() {
   const [researchPrompt, setResearchPrompt] = useState("");
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [datasetPath, setDatasetPath] = useState(
-    "F:\\mvtec_anomaly_detection",
+    "E:\\揭榜挂帅\\AI Scientist\\data\\mvtec_anomaly_detection",
   );
   const [runNotice, setRunNotice] = useState<string | null>(null);
+  const [streamEvents, setStreamEvents] = useState<ExperimentProgressEvent[]>([]);
   const [cycleGuidance, setCycleGuidance] = useState(
     "请重点解释 transistor 类别上的反向效应，并检验参考样本策略是否受类别、K 值和定位指标影响。",
   );
@@ -148,6 +157,10 @@ export default function App() {
     api.health().then(setHealth).catch((reason) => setError(String(reason)));
     api.listProjects().then(setRecentProjects).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    setStreamEvents(project?.experiment_progress?.slice(-160) ?? []);
+  }, [project?.id]);
 
   const currentIndex = useMemo(
     () => (project ? STAGES.findIndex((item) => item.id === project.stage) : -1),
@@ -173,6 +186,12 @@ export default function App() {
 
   async function driveExperimentLoop(seed: Project): Promise<Project> {
     let current = seed;
+    if (current.experiment_campaign?.execution_mode === "parallel") {
+      // A manual Round review may already have closed the parallel campaign;
+      // do not issue a second stream request against a completed campaign.
+      if (current.experiment_campaign.status !== "active") return current;
+      return executeParallelCampaign(current);
+    }
     // One HTTP request executes one paired run.  This client-side driver turns
     // those low-level calls into the user-facing Round semantics: three
     // iterations, one midpoint gate, then automatic transition to the next
@@ -209,25 +228,106 @@ export default function App() {
     return current;
   }
 
-  async function initializeAndRun(): Promise<void> {
-    if (!project?.experiment_plan) return;
+  async function finalizeAutomaticResults(seed: Project): Promise<Project> {
+    let current = seed;
+    if (current.experiment_campaign?.status !== "completed"
+      || current.stage !== "experiments_queued") return current;
+    current = await api.finalizeResults(current.id);
+    setProject(current);
+    for (let guard = 0; guard < 3; guard += 1) {
+      if (!["results_ready", "results_analyzed", "innovation_reviewed"].includes(current.stage)) break;
+      current = await api.advance(current.id);
+      setProject(current);
+      if (current.stage === "hypotheses_proposed") break;
+    }
+    return current;
+  }
+
+  async function executeParallelCampaign(seed: Project): Promise<Project> {
+    setStreamEvents([]);
+    setRunNotice("并行实验流已启动，等待本机执行器返回结构化进度…");
+    const streamed = await api.executeParallelStream(
+      seed.id,
+      { maxParallelRuns: seed.experiment_campaign?.parallelism, autoReview: true },
+      (event) => {
+        if (event.event_type !== "heartbeat") {
+          setStreamEvents((current) => [...current, event].slice(-160));
+        }
+        setRunNotice(event.message);
+        if (event.project) setProject(event.project);
+      },
+    );
+    setProject(streamed);
+    const finished = await finalizeAutomaticResults(streamed);
+    if (finished.stage === "report_ready") {
+      setRunNotice("所选创新点已完成并行实验、统计分析、创新审查和研究输出。");
+    } else if (finished.stage === "hypotheses_proposed") {
+      setRunNotice("上一批结果未充分支持主张；系统已生成修订假设，等待你重新排名。");
+    }
+    return finished;
+  }
+
+  async function initializeAndRun(seedProject?: Project): Promise<void> {
+    const source = seedProject ?? project;
+    if (!source) return;
     setBusy(true);
     setError(null);
     setRunNotice(null);
     try {
-      const firstHypothesisId = project.experiment_plan.hypothesis_ids[0];
-      const manifestPath = project.dataset_audits.at(-1)?.manifest_path;
+      const selectedHypotheses = [...source.hypotheses]
+        .filter((item) => item.user_selected === true)
+        .sort((left, right) =>
+          (left.user_priority ?? 1000) - (right.user_priority ?? 1000)
+            || (right.user_score ?? 0) - (left.user_score ?? 0),
+        );
+      const plannedIds = source.experiment_plan?.hypothesis_ids ?? [];
+      const selectedIds = selectedHypotheses.length > 0
+        ? selectedHypotheses.map((item) => item.id)
+        : plannedIds;
+      const firstHypothesisId = selectedIds[0];
+      const manifestPath = source.dataset_audits.at(-1)?.manifest_path;
       if (!firstHypothesisId || !manifestPath) throw new Error("请先完成数据审计和实验预注册");
-      const initialized = await api.initializeCampaign(
-        project.id,
+      const initialized = await api.autoStartCampaign(
+        source.id,
         manifestPath,
         firstHypothesisId,
-        preferredCampaignDetector(project),
+        selectedIds,
+        preferredCampaignDetector(source),
       );
       setProject(initialized);
       await driveExperimentLoop(initialized);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitHypothesisRanking(rankings: HypothesisRankingInput[]): Promise<boolean> {
+    if (!project) return false;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.rankHypotheses(project.id, rankings, true);
+      setProject(updated);
+      setRunNotice("用户排名已记录；系统正在自动审计数据、预注册并启动所选创新点的并行实验…");
+      // The ranking is the only scientific decision gate.  If a dataset path is
+      // already available, continue the operational stages automatically; a
+      // missing/invalid path leaves the ranked project intact for manual retry.
+      if (datasetPath.trim()) {
+        try {
+          const audited = await api.auditDataset(updated.id, datasetPath.trim());
+          setProject(audited);
+          await initializeAndRun(audited);
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+          setRunNotice("排名已保存，但数据审计或自动实验未启动；请在实验面板修正数据路径后重试。");
+        }
+      }
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -248,12 +348,12 @@ export default function App() {
     }
   }
 
-  async function continueRound(guidance: string): Promise<boolean> {
+  async function continueRound(roundId: string, guidance: string): Promise<boolean> {
     if (!project) return false;
     setBusy(true);
     setError(null);
     try {
-      const afterGuidance = await api.reviewRound(project.id, guidance);
+      const afterGuidance = await api.reviewRound(project.id, guidance, roundId);
       setProject(afterGuidance);
       await driveExperimentLoop(afterGuidance);
       return true;
@@ -364,7 +464,9 @@ export default function App() {
               <p>{project.spec.objective} · Research cycle {project.research_cycle}</p>
             </div>
             <div className="actions">
-              {project.stage === "hypotheses_reviewed" ? (
+              {project.stage === "hypotheses_proposed" ? (
+                <span className="decision-waiting">等待用户排名筛选</span>
+              ) : project.stage === "hypotheses_reviewed" ? (
                 <>
                   <button
                     onClick={() => document.getElementById("experiment-entry")?.scrollIntoView({ behavior: "smooth" })}
@@ -385,9 +487,15 @@ export default function App() {
               ) : project.stage === "awaiting_experiment_approval" ? (
                 <button
                   disabled={busy}
-                  onClick={() => execute(() => approveWithRequiredMethods(project))}
+                  onClick={() => {
+                    if (project.dataset_audits.at(-1)?.verified) {
+                      void initializeAndRun();
+                    } else {
+                      document.getElementById("experiment-entry")?.scrollIntoView({ behavior: "smooth" });
+                    }
+                  }}
                 >
-                  批准预注册实验
+                  {project.dataset_audits.at(-1)?.verified ? "自动预注册并开始并行实验" : "先审计数据再开始实验"}
                 </button>
               ) : needsRevisionDecision ? (
                 <span className="decision-waiting">等待用户指导</span>
@@ -403,12 +511,23 @@ export default function App() {
                 下一步：
                 {project.stage === "hypotheses_reviewed"
                   ? "接入并审计 MVTec 数据，生成预注册实验验证当前假设"
+                  : project.stage === "hypotheses_proposed"
+                    ? "请在下方审阅、打分并选择需要验证的创新点"
                   : needsRevisionDecision
                     ? "重大决策：修订当前假设并投入下一轮实验预算"
                   : project.next_action}
               </span>
             </div>
           </section>
+
+          {(project.stage === "hypotheses_proposed"
+            || (project.stage === "hypotheses_reviewed" && !project.experiment_plan)) && (
+              <HypothesisRankingPanel
+                project={project}
+                busy={busy}
+                onSubmit={submitHypothesisRanking}
+              />
+            )}
 
           {needsRevisionDecision && (
             <section className="human-guidance-box cycle-guidance" aria-label="下一研究循环指导">
@@ -488,7 +607,9 @@ export default function App() {
           </section>
 
           {(["hypotheses_reviewed", "awaiting_experiment_approval", "experiments_queued"].includes(project.stage)
-            || project.experiment_campaign) && (
+            || project.experiment_campaign
+            || (project.experiment_campaign_history.length > 0
+              && ["results_ready", "results_analyzed", "innovation_reviewed", "report_ready"].includes(project.stage))) && (
               <div id="experiment-entry">
               <>
                 <ExperimentCampaignPanel
@@ -506,6 +627,8 @@ export default function App() {
                   }
                   onApprove={() => execute(() => approveWithRequiredMethods(project))}
                   onInitialize={() => { void initializeAndRun(); }}
+                  streamEvents={streamEvents}
+                  onExecuteParallel={advanceRoundAutomatically}
                   onAdvanceRound={advanceRoundAutomatically}
                   onContinueRound={continueRound}
                   onReviewRound={reviewCompletedRound}
