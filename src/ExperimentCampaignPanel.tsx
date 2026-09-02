@@ -16,7 +16,7 @@ interface Props {
   streamEvents: ExperimentProgressEvent[];
   onExecuteParallel: () => Promise<boolean>;
   onAdvanceRound: () => Promise<boolean>;
-  onContinueRound: (guidance: string) => Promise<boolean>;
+  onContinueRound: (roundId: string, guidance: string) => Promise<boolean>;
   onReviewRound: () => Promise<boolean>;
   onFinalize: () => void;
 }
@@ -89,6 +89,7 @@ function progressEventLabel(value: string) {
     run_queued: "Run 已排队",
     run_started: "Run 开始",
     run_finished: "Run 完成",
+    round_guidance_required: "等待 Round 指导",
     round_ready: "Round 可分析",
     round_completed: "Round 汇总完成",
     campaign_completed: "实验批次完成",
@@ -208,9 +209,12 @@ export function ExperimentCampaignPanel({
   onReviewRound,
   onFinalize,
 }: Props) {
+  const defaultRoundGuidance =
+    "请结合第 1 次迭代结果，优先检验最可能证伪该创新点的类别与 K 值，并保持预注册比较公平。";
   const [roundGuidance, setRoundGuidance] = useState(
-    "请结合第 1 次迭代结果，优先检验最可能证伪该创新点的类别与 K 值，并保持预注册比较公平。",
+    defaultRoundGuidance,
   );
+  const [roundGuidanceById, setRoundGuidanceById] = useState<Record<string, string>>({});
   const [aiGenerateStrategy, setAiGenerateStrategy] = useState(false);
   const [aiGenerateDetector, setAiGenerateDetector] = useState(false);
   const audit = project.dataset_audits.at(-1) ?? null;
@@ -287,12 +291,27 @@ export function ExperimentCampaignPanel({
     .find((event) => event.progress !== null && event.progress !== undefined);
   const streamProgress = latestProgressEvent?.progress ?? 0;
 
-  async function continueWithGuidance() {
-    const succeeded = await onContinueRound(roundGuidance.trim());
+  function guidanceForRound(roundId: string) {
+    return roundGuidanceById[roundId] ?? defaultRoundGuidance;
+  }
+
+  function setGuidanceForRound(roundId: string, value: string) {
+    setRoundGuidanceById((current) => ({ ...current, [roundId]: value }));
+  }
+
+  async function continueWithGuidance(roundId?: string) {
+    const guidance = roundId ? guidanceForRound(roundId) : roundGuidance;
+    const succeeded = await onContinueRound(roundId ?? "", guidance.trim());
     if (succeeded) {
-      setRoundGuidance(
-        "请结合第 1 次迭代结果，优先检验最可能证伪该创新点的类别与 K 值，并保持预注册比较公平。",
-      );
+      if (roundId) {
+        setRoundGuidanceById((current) => {
+          const next = { ...current };
+          delete next[roundId];
+          return next;
+        });
+      } else {
+        setRoundGuidance(defaultRoundGuidance);
+      }
     }
   }
 
@@ -304,7 +323,7 @@ export function ExperimentCampaignPanel({
           <h3>科学实验任务规划与反馈迭代</h3>
           <p>
             真实 MVTec 数据 → DINOv2 支持集表征 → AnomalyDINO 本机运行 → 成对统计 →
-            每个创新点一个 Round 并行执行三次自动迭代。运行状态通过流式事件实时展示并写入 Research Ledger。
+            每个创新点一个 Round：首轮完成后等待一次指导，再自动完成后两次迭代。运行状态通过流式事件实时展示并写入 Research Ledger。
           </p>
         </div>
         <span className={`campaign-state ${campaign?.status ?? "setup"}`}>
@@ -608,7 +627,7 @@ export function ExperimentCampaignPanel({
             </div>
           )}
 
-          {campaign.status === "awaiting_guidance" && (
+          {campaign.status === "awaiting_guidance" && campaign.execution_mode !== "parallel" && (
             <div className="human-guidance-box execution-guidance">
               <div className="guidance-copy">
                 <p className="eyebrow">Human-in-the-loop · once per Round</p>
@@ -843,9 +862,67 @@ export function ExperimentCampaignPanel({
                       截至本轮累计形成 {cumulativePairs}/{minimumPairCount} 个有效成对比较。
                       {evidenceReady
                         ? "已达到预注册的最小证据门槛，但仍需结合后续统计分析确认。"
-                        : "尚未达到预注册的最小门槛，当前趋势不能作为最终结论。"}
+                      : "尚未达到预注册的最小门槛，当前趋势不能作为最终结论。"}
                     </p>
                   </div>
+
+                  {campaign.execution_mode === "parallel" && round.status === "awaiting_guidance" && (
+                    <div className="human-guidance-box execution-guidance round-guidance-card">
+                      <div className="guidance-copy">
+                        <p className="eyebrow">Human-in-the-loop · Round {round.index}</p>
+                        <h4>第 1 次迭代已完成，请指导本 Round 的后续实验</h4>
+                        <p>
+                          该创新点的首轮成对结果已经写入台账。提交一次建议后，系统会自动执行本 Round
+                          预注册的第 2、3 次迭代；其他创新点 Round 仍可独立等待各自指导。
+                        </p>
+                      </div>
+                      <label htmlFor={`round-guidance-${round.id}`}>本 Round 指导意见</label>
+                      <textarea
+                        id={`round-guidance-${round.id}`}
+                        value={guidanceForRound(round.id)}
+                        onChange={(event) => setGuidanceForRound(round.id, event.target.value)}
+                        rows={3}
+                        maxLength={3000}
+                        disabled={busy}
+                        placeholder="例如：优先检验最可能证伪该创新点的类别，并保持 K 值和随机种子比较公平。"
+                      />
+                      <div className="guidance-presets" aria-label={`Round ${round.index} 实验指导快捷建议`}>
+                        <button
+                          type="button"
+                          className="guidance-chip"
+                          disabled={busy}
+                          onClick={() => setGuidanceForRound(round.id, "优先执行最可能证伪当前创新点的任务，并说明选择依据。")}
+                        >
+                          信息增益优先
+                        </button>
+                        <button
+                          type="button"
+                          className="guidance-chip"
+                          disabled={busy}
+                          onClick={() => setGuidanceForRound(round.id, "扩大类别覆盖，同时保持 random 与 k-center 成对比较。")}
+                        >
+                          优先补齐配对
+                        </button>
+                        <button
+                          type="button"
+                          className="guidance-chip"
+                          disabled={busy}
+                          onClick={() => setGuidanceForRound(round.id, "按 AI Scientist 的信息增益建议继续第 2、3 次迭代。")}
+                        >
+                          按系统建议
+                        </button>
+                      </div>
+                      <div className="guidance-submit">
+                        <small>{guidanceForRound(round.id).trim().length}/3000 · 指导与后续 Run ID 将写入 Research Ledger</small>
+                        <button
+                          disabled={busy || guidanceForRound(round.id).trim().length < 2}
+                          onClick={() => void continueWithGuidance(round.id)}
+                        >
+                          {busy ? "采纳指导并执行后续迭代…" : `提交指导并继续 Round ${round.index}`}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {round.feedback && (
                     <div className="round-section feedback-note">

@@ -219,10 +219,13 @@ export const api = {
     consume(decoder.decode());
     return request<Project>(`/api/v1/projects/${projectId}`);
   },
-  reviewRound: (projectId: string, userGuidance?: string) =>
+  reviewRound: (projectId: string, userGuidance?: string, roundId?: string) =>
     request<Project>(`/api/v1/projects/${projectId}/experiment-campaign/review`, {
       method: "POST",
-      body: JSON.stringify(userGuidance ? { user_guidance: userGuidance.trim() } : {}),
+      body: JSON.stringify({
+        ...(userGuidance ? { user_guidance: userGuidance.trim() } : {}),
+        ...(roundId ? { round_id: roundId } : {}),
+      }),
     }),
   finalizeResults: (projectId: string) =>
     request<Project>(`/api/v1/projects/${projectId}/results/finalize`, {

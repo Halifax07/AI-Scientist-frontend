@@ -250,6 +250,7 @@ export interface ExperimentProgressEvent {
     | "run_queued"
     | "run_started"
     | "run_finished"
+    | "round_guidance_required"
     | "round_ready"
     | "round_completed"
     | "campaign_completed"

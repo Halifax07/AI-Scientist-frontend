@@ -93,6 +93,7 @@ button.secondary { color: #31453a; border: 1px solid #cfd9d3; background: transp
 }
 .cycle-guidance { margin: 14px 0 24px; border-left: 5px solid #176c4a; }
 .execution-guidance { margin: 0 0 16px; }
+.round-guidance-card { margin-top: 14px; border-left: 4px solid #c59614; background: linear-gradient(135deg, rgba(255, 248, 217, .86), rgba(249, 251, 250, .96)); }
 .guidance-copy h3, .guidance-copy h4 { margin-bottom: 6px; }
 .guidance-copy p:not(.eyebrow) { margin-bottom: 0; color: #5c6d64; line-height: 1.55; }
 .human-guidance-box label { color: #28483a; font-size: 12px; font-weight: 800; }

@@ -187,6 +187,9 @@ export default function App() {
   async function driveExperimentLoop(seed: Project): Promise<Project> {
     let current = seed;
     if (current.experiment_campaign?.execution_mode === "parallel") {
+      // A manual Round review may already have closed the parallel campaign;
+      // do not issue a second stream request against a completed campaign.
+      if (current.experiment_campaign.status !== "active") return current;
       return executeParallelCampaign(current);
     }
     // One HTTP request executes one paired run.  This client-side driver turns
@@ -345,12 +348,12 @@ export default function App() {
     }
   }
 
-  async function continueRound(guidance: string): Promise<boolean> {
+  async function continueRound(roundId: string, guidance: string): Promise<boolean> {
     if (!project) return false;
     setBusy(true);
     setError(null);
     try {
-      const afterGuidance = await api.reviewRound(project.id, guidance);
+      const afterGuidance = await api.reviewRound(project.id, guidance, roundId);
       setProject(afterGuidance);
       await driveExperimentLoop(afterGuidance);
       return true;
