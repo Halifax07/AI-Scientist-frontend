@@ -125,16 +125,16 @@ async function approveWithRequiredMethods(project: Project): Promise<Project> {
 
 const STAGES: Array<{ id: Stage; label: string }> = [
   { id: "created", label: "研究输入" },
-  { id: "scope_formalized", label: "问题形式化" },
-  { id: "evidence_ready", label: "证据构建" },
+  { id: "scope_formalized", label: "问题定位" },
+  { id: "evidence_ready", label: "文献检索" },
   { id: "gaps_discovered", label: "空白发现" },
   { id: "hypotheses_proposed", label: "假设生成" },
-  { id: "hypotheses_reviewed", label: "辩论排名" },
-  { id: "awaiting_experiment_approval", label: "实验预注册" },
+  { id: "hypotheses_reviewed", label: "假设筛选" },
+  { id: "awaiting_experiment_approval", label: "实验设计" },
   { id: "experiments_queued", label: "实验执行" },
-  { id: "results_ready", label: "结果锁定" },
+  { id: "results_ready", label: "结果确认" },
   { id: "results_analyzed", label: "统计分析" },
-  { id: "innovation_reviewed", label: "创新审查" },
+  { id: "innovation_reviewed", label: "创新评估" },
   { id: "report_ready", label: "研究输出" },
 ];
 
@@ -143,7 +143,23 @@ export default function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [researchPrompt, setResearchPrompt] = useState("");
+  // 平台默认入口：基于机器视觉的异常检测。用户可在此基础上自由调整领域
+  // 与关键词；少样本工业视觉异常检测保留为内置演示场景,方便快速对比。
+  const [researchMode, setResearchMode] = useState<"custom" | "fsad_demo">(
+    "custom",
+  );
+  const [researchDomain, setResearchDomain] = useState(
+    "基于机器视觉的异常检测",
+  );
+  const [researchPrompt, setResearchPrompt] = useState(
+    "围绕正常样本代表性与支持集选择,提出可可可证伪的创新机制。",
+  );
+  const [researchKeywords, setResearchKeywords] = useState<string[]>([
+    "异常检测",
+    "少样本",
+    "支持集选择",
+  ]);
+  const [keywordDraft, setKeywordDraft] = useState("");
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   // 数据集根目录因机器而异，不写死任何人的本地路径：默认留空，仅记忆
   // 当前浏览器最近一次填写过的路径，避免每次重新输入。
@@ -157,7 +173,7 @@ export default function App() {
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const [streamEvents, setStreamEvents] = useState<ExperimentProgressEvent[]>([]);
   const [cycleGuidance, setCycleGuidance] = useState(
-    "请重点解释 transistor 类别上的反向效应，并检验参考样本策略是否受类别、K 值和定位指标影响。",
+    "请重点分析 transistor 类别的反向效应，并检查参考样本策略是否受类别、K 值和定位指标影响。",
   );
 
   useEffect(() => {
@@ -226,7 +242,7 @@ export default function App() {
         const metric = result.execution.normalized_result?.metrics.image_auroc;
         setRunNotice(
           result.execution.status === "succeeded"
-            ? `Round ${current.experiment_campaign?.current_round ?? "—"} 自动迭代完成：${result.run_id}，Image AUROC ${metric?.toFixed(4) ?? "已解析"}。`
+            ? `第 ${current.experiment_campaign?.current_round ?? "—"} 轮迭代完成：${result.run_id}，识别准确率 ${metric?.toFixed(4) ?? "已解析"}。`
             : `实验 ${result.run_id} 未成功：${result.execution.error ?? result.execution.status}`,
         );
         continue;
@@ -261,7 +277,7 @@ export default function App() {
 
   async function executeParallelCampaign(seed: Project): Promise<Project> {
     setStreamEvents([]);
-    setRunNotice("并行实验流已启动，等待本机执行器返回结构化进度…");
+    setRunNotice("并行实验已启动，等待本机执行器返回进度…");
     const streamed = await api.executeParallelStream(
       seed.id,
       { maxParallelRuns: seed.experiment_campaign?.parallelism, autoReview: true },
@@ -276,9 +292,9 @@ export default function App() {
     setProject(streamed);
     const finished = await finalizeAutomaticResults(streamed);
     if (finished.stage === "report_ready") {
-      setRunNotice("所选创新点已完成并行实验、统计分析、创新审查和研究输出。");
+      setRunNotice("所选假设已完成实验、统计分析、创新评估和研究输出。");
     } else if (finished.stage === "hypotheses_proposed") {
-      setRunNotice("上一批结果未充分支持主张；系统已生成修订假设，等待你重新排名。");
+      setRunNotice("上一轮结果未能支持假设；系统已生成修订假设，等待你重新筛选。");
     }
     return finished;
   }
@@ -328,12 +344,12 @@ export default function App() {
       setProject(updated);
       if (!datasetPath.trim()) {
         setRunNotice(
-          "排名已保存并完成预注册。请在本机实验面板输入数据集的绝对路径，"
-          + "点击「审计并冻结数据」，再启动所选创新点的闭环实验。",
+          "排序已保存并完成实验方案设计。请在下方实验面板填入数据集的绝对路径，"
+          + "点击「审计并冻结数据」，再启动实验。",
         );
         return true;
       }
-      setRunNotice("用户排名已记录；系统正在自动审计数据、预注册并启动所选创新点的并行实验…");
+      setRunNotice("已记录你的排序；系统正在自动审计数据、生成实验方案并启动实验…");
       // The ranking is the only scientific decision gate.  If a dataset path is
       // already available, continue the operational stages automatically; a
       // missing/invalid path leaves the ranked project intact for manual retry.
@@ -343,7 +359,7 @@ export default function App() {
         await initializeAndRun(audited);
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : String(reason));
-        setRunNotice("排名已保存，但数据审计或自动实验未启动；请在实验面板修正数据路径后重试。");
+        setRunNotice("排序已保存，但数据审计或自动实验未启动；请在下方实验面板修正数据路径后重试。");
       }
       return true;
     } catch (reason) {
@@ -427,7 +443,7 @@ export default function App() {
       const updated = await api.startNextResearchCycle(project.id, cycleGuidance);
       setProject(updated);
       setCycleGuidance("");
-      setRunNotice("用户指导已写入 Research Ledger；AI Scientist 已据此生成下一循环修订假设。 ");
+      setRunNotice("你的建议已记录；AI Scientist 据此生成了下一轮的修订假设。 ");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -439,9 +455,11 @@ export default function App() {
     <main>
       <header className="topbar">
         <div>
-          <p className="eyebrow">Autonomous scientific discovery</p>
-          <h1>FSAD Scientist</h1>
-          <p className="subtitle">少样本工业视觉异常检测自主科研工作台</p>
+          <p className="eyebrow">通用科研工作台</p>
+          <h1>AI Scientist</h1>
+          <p className="subtitle">
+            输入研究方向，自动完成文献检索、问题定位、假设生成与可证伪的实验设计。
+          </p>
         </div>
         <div className="runtime">
           <span className={health?.runtime.includes("mock") ? "status warning" : "status live"}>
@@ -454,31 +472,167 @@ export default function App() {
       {!project ? (
         <section className="empty-state">
           <div className="ideation-card">
-            <p className="eyebrow">No-dataset ideation mode</p>
-            <h2>直接提出你的研究要求</h2>
-            <p>
-              不需要先上传数据。系统会检索文献、发现研究空白并生成可证伪假设，
-              到实验阶段前自动停止。
+            <p className="eyebrow">通用科研工作台 · 默认方向：机器视觉异常检测</p>
+            <h2>开启一项新研究</h2>
+            <p className="ideation-lead">
+              选择一个研究方向、写下你想验证的问题，系统会自动检索文献、找出尚未解决的问题，
+              并给出可被实验验证的假设。
             </p>
-            <label htmlFor="research-prompt">研究问题或要求</label>
+
+            <div className="mode-toggle" role="tablist" aria-label="选题模式">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={researchMode === "custom"}
+                className={researchMode === "custom" ? "active" : ""}
+                disabled={busy}
+                onClick={() => setResearchMode("custom")}
+              >
+                自定义方向
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={researchMode === "fsad_demo"}
+                className={researchMode === "fsad_demo" ? "active" : ""}
+                disabled={busy}
+                onClick={() => setResearchMode("fsad_demo")}
+              >
+                内置演示：少样本工业质检
+              </button>
+            </div>
+
+            {researchMode === "custom" ? (
+              <>
+                <label htmlFor="research-domain">研究方向</label>
+                <input
+                  id="research-domain"
+                  type="text"
+                  value={researchDomain}
+                  onChange={(event) => setResearchDomain(event.target.value)}
+                  placeholder="例如：基于机器视觉的异常检测、医学影像多模态融合"
+                  maxLength={120}
+                  disabled={busy}
+                />
+
+                <label htmlFor="research-keywords">关键词</label>
+                <div className="keyword-input">
+                  <input
+                    id="research-keywords"
+                    type="text"
+                    value={keywordDraft}
+                    onChange={(event) => setKeywordDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === ",") {
+                        event.preventDefault();
+                        const value = keywordDraft.trim();
+                        if (
+                          value
+                          && !researchKeywords.includes(value)
+                          && researchKeywords.length < 12
+                        ) {
+                          setResearchKeywords([...researchKeywords, value]);
+                        }
+                        setKeywordDraft("");
+                      }
+                    }}
+                    placeholder="输入关键词后按回车添加（例：少样本、对比学习）"
+                    maxLength={80}
+                    disabled={busy}
+                  />
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={
+                      busy
+                      || keywordDraft.trim().length === 0
+                      || researchKeywords.length >= 12
+                    }
+                    onClick={() => {
+                      const value = keywordDraft.trim();
+                      if (
+                        value
+                        && !researchKeywords.includes(value)
+                        && researchKeywords.length < 12
+                      ) {
+                        setResearchKeywords([...researchKeywords, value]);
+                      }
+                      setKeywordDraft("");
+                    }}
+                  >
+                    添加
+                  </button>
+                </div>
+                {researchKeywords.length > 0 && (
+                  <ul className="keyword-tags" aria-label="已添加的关键词">
+                    {researchKeywords.map((kw) => (
+                      <li key={kw}>
+                        <span>{kw}</span>
+                        <button
+                          type="button"
+                          aria-label={`删除关键词 ${kw}`}
+                          disabled={busy}
+                          onClick={() =>
+                            setResearchKeywords(
+                              researchKeywords.filter((item) => item !== kw),
+                            )
+                          }
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p className="input-hint">
+                已选择内置演示：少样本工业视觉异常检测。系统将加载平台内置的演示数据与候选问题，
+                用于快速走完流程。
+              </p>
+            )}
+
+            <label htmlFor="research-prompt">研究问题</label>
             <textarea
               id="research-prompt"
               value={researchPrompt}
               onChange={(event) => setResearchPrompt(event.target.value)}
-              placeholder="例如：围绕正常样本代表性和支持集选择，提出区别于随机 K-shot 的创新机制，并给出可证伪假设。"
-              rows={6}
+              placeholder="例如：围绕正常样本代表性和支持集选择，提出区别于随机 K-shot 的创新机制。"
+              rows={5}
               maxLength={3000}
               disabled={busy}
             />
             <div className="ideation-actions">
-              <button
-                disabled={busy || researchPrompt.trim().length < 4}
-                onClick={() => execute(() => api.createIdeation(researchPrompt))}
-              >
-                {busy ? "正在检索文献并生成假设…" : "生成研究空白与创新假设"}
-              </button>
+              {researchMode === "custom" ? (
+                <button
+                  disabled={
+                    busy
+                    || researchPrompt.trim().length < 4
+                    || researchDomain.trim().length < 2
+                  }
+                  onClick={() =>
+                    execute(async () => {
+                      const created = await api.createCustomProject({
+                        domain: researchDomain,
+                        objective: researchPrompt,
+                        keywords: researchKeywords,
+                      });
+                      return api.getProject(created.id);
+                    })
+                  }
+                >
+                  {busy ? "正在检索文献并生成假设…" : "开始研究"}
+                </button>
+              ) : (
+                <button
+                  disabled={busy || researchPrompt.trim().length < 4}
+                  onClick={() => execute(() => api.createIdeation(researchPrompt))}
+                >
+                  {busy ? "正在准备演示项目…" : "开始研究"}
+                </button>
+              )}
               <button className="secondary" disabled={busy} onClick={() => execute(api.createDemo)}>
-                创建默认演示任务
+                仅创建演示项目
               </button>
               {recentProjects.length > 0 && (
                 <button
@@ -498,17 +652,17 @@ export default function App() {
             <div>
               <p className="eyebrow">Research project · {project.id}</p>
               <h2>{project.spec.title}</h2>
-              <p>{project.spec.objective} · Research cycle {project.research_cycle}</p>
+              <p>{project.spec.objective} · 第 {project.research_cycle} 轮研究</p>
             </div>
             <div className="actions">
               {project.stage === "hypotheses_proposed" ? (
-                <span className="decision-waiting">等待用户排名筛选</span>
+                <span className="decision-waiting">等待你筛选假设</span>
               ) : project.stage === "hypotheses_reviewed" ? (
                 <>
                   <button
                     onClick={() => document.getElementById("experiment-entry")?.scrollIntoView({ behavior: "smooth" })}
                   >
-                    接入数据并验证假设
+                    接入数据并开始验证
                   </button>
                   <button
                     className="secondary"
@@ -518,7 +672,7 @@ export default function App() {
                       setError(null);
                     }}
                   >
-                    提出另一个研究问题
+                    换一个研究方向
                   </button>
                 </>
               ) : project.stage === "awaiting_experiment_approval" ? (
@@ -532,26 +686,26 @@ export default function App() {
                     }
                   }}
                 >
-                  {project.dataset_audits.at(-1)?.verified ? "自动预注册并开始并行实验" : "先审计数据再开始实验"}
+                  {project.dataset_audits.at(-1)?.verified ? "自动预注册并开始实验" : "先审计数据再开始"}
                 </button>
               ) : needsRevisionDecision ? (
-                <span className="decision-waiting">等待用户指导</span>
+                <span className="decision-waiting">等待你提供下一步方向</span>
               ) : (
                 <button
                   disabled={busy || ["experiments_queued", "report_ready"].includes(project.stage)}
                   onClick={() => execute(() => api.advance(project.id))}
                 >
-                  推进下一科研阶段
+                  进入下一阶段
                 </button>
               )}
               <span className="next-action">
                 下一步：
                 {project.stage === "hypotheses_reviewed"
-                  ? "接入并审计 MVTec 数据，生成预注册实验验证当前假设"
+                  ? "接入并审计数据，为选定的假设生成可执行的实验方案"
                   : project.stage === "hypotheses_proposed"
-                    ? "请在下方审阅、打分并选择需要验证的创新点"
+                    ? "请在下方为感兴趣的假设打分并选择进入实验验证"
                   : needsRevisionDecision
-                    ? "重大决策：修订当前假设并投入下一轮实验预算"
+                    ? "需要你决定：修订假设并投入下一轮实验，或停止"
                   : project.next_action}
               </span>
             </div>
@@ -571,14 +725,14 @@ export default function App() {
           {needsRevisionDecision && (
             <section className="human-guidance-box cycle-guidance" aria-label="下一研究循环指导">
               <div className="guidance-copy">
-                <p className="eyebrow">Human decision gate · next research cycle</p>
-                <h3>先指导 AI Scientist，再投入下一研究循环</h3>
+                <p className="eyebrow">下一研究循环 · 请提供方向</p>
+                <h3>告诉 AI Scientist，下一轮你想重点看什么</h3>
                 <p>
-                  你的建议会与本轮真实统计结果一起进入 Hypothesis Revision Agent，影响新假设、
-                  重点类别、K 值和下一轮实验范围；新方案仍需重新辩论、预注册和批准。
+                  你的建议会与本轮真实统计结果一起进入"假设修订"环节，影响新假设的方向、
+                  重点类别、K 值和下一轮实验范围；新方案仍需重新审查、预注册和确认。
                 </p>
               </div>
-              <label htmlFor="cycle-guidance">下一研究循环建议</label>
+              <label htmlFor="cycle-guidance">下一轮研究建议</label>
               <textarea
                 id="cycle-guidance"
                 value={cycleGuidance}
@@ -586,14 +740,14 @@ export default function App() {
                 rows={4}
                 maxLength={3000}
                 disabled={busy}
-                placeholder="例如：下一循环聚焦 transistor 的反向效应；比较 K=1/2/4，并把 Pixel AUROC 作为边界诊断指标。"
+                placeholder="例如：下一轮重点看 transistor 类别的反向效应；比较 K=1/2/4，并把像素级定位作为辅助指标。"
               />
               <div className="guidance-presets" aria-label="研究循环指导快捷建议">
                 <button
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setCycleGuidance("聚焦 transistor 类别上的负效应，设计类别依赖与 K 敏感性实验，不再假设 k-center 存在普遍正主效应。")}
+                  onClick={() => setCycleGuidance("聚焦 transistor 类别上的反向效应，按类别与 K 值设计敏感性实验。")}
                 >
                   诊断反向效应
                 </button>
@@ -601,32 +755,32 @@ export default function App() {
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setCycleGuidance("优先验证 Image AUROC 与 Pixel AUROC/AUPRO 是否存在权衡，并明确纹理类和结构类异常的边界。")}
+                  onClick={() => setCycleGuidance("比较图像级识别与像素级定位两类指标的差异，并明确纹理类与结构类异常的边界。")}
                 >
-                  关注指标权衡
+                  关注指标差异
                 </button>
                 <button
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setCycleGuidance("根据上一循环证据自动缩小假设，优先选择证伪价值最高且预算可承受的下一循环方案。")}
+                  onClick={() => setCycleGuidance("按本轮证据自动收窄范围，优先选择证伪价值最高且预算可承受的方案。")}
                 >
                   采用 AI 建议
                 </button>
               </div>
               <div className="guidance-submit">
-                <small>{cycleGuidance.trim().length}/3000 · 启动后仍会停在新假设审查与预注册关口</small>
+                <small>{cycleGuidance.trim().length}/3000 · 启动后会在新假设审查与预注册关口再次等待你</small>
                 <button
                   disabled={busy || cycleGuidance.trim().length < 2}
                   onClick={() => void startNextResearchCycle()}
                 >
-                  {busy ? "AI 正在解释并修订假设…" : "提交指导并启动下一研究循环"}
+                  {busy ? "AI 正在修订假设…" : "提交并启动下一轮"}
                 </button>
               </div>
             </section>
           )}
 
-          <ol className="timeline" aria-label="自主科研阶段">
+          <ol className="timeline" aria-label="研究阶段进度">
             {STAGES.map((stage, index) => (
               <li
                 key={stage.id}
@@ -638,11 +792,11 @@ export default function App() {
             ))}
           </ol>
 
-          <section className="metrics" aria-label="项目产物统计">
-            <article><strong>{project.evidence.length}</strong><span>证据候选</span></article>
+          <section className="metrics" aria-label="项目进度统计">
+            <article><strong>{project.evidence.length}</strong><span>收集到的文献</span></article>
             <article><strong>{project.gaps.length}</strong><span>研究空白</span></article>
-            <article><strong>{project.hypotheses.length}</strong><span>可证伪假设</span></article>
-            <article><strong>{project.runs.length}</strong><span>实验节点</span></article>
+            <article><strong>{project.hypotheses.length}</strong><span>假设</span></article>
+            <article><strong>{project.runs.length}</strong><span>实验运行</span></article>
           </section>
 
           {(["hypotheses_reviewed", "awaiting_experiment_approval", "experiments_queued"].includes(project.stage)
@@ -681,11 +835,11 @@ export default function App() {
           <div className="columns">
             <section>
               <div className="section-title">
-                <h3>假设竞技场</h3>
-                <span>生成 · 反驳 · Elo 排名</span>
+                <h3>假设列表</h3>
+                <span>查看每条假设的内容、评分与排名</span>
               </div>
               {project.hypotheses.length === 0 ? (
-                <p className="placeholder">流程尚未进入假设生成阶段。</p>
+                <p className="placeholder">尚未生成假设。</p>
               ) : (
                 <div className="hypotheses">
                   {project.hypotheses.map((hypothesis, index) => (
@@ -693,13 +847,13 @@ export default function App() {
                       <div className="hypothesis-head">
                         <span>H{index + 1}</span>
                         <b>{hypothesis.status}</b>
-                        {hypothesis.score && <em>Elo {hypothesis.score.elo.toFixed(0)}</em>}
+                        {hypothesis.score && <em>评分 {hypothesis.score.elo.toFixed(0)}</em>}
                       </div>
                       <h4>{hypothesis.title}</h4>
                       <p>{hypothesis.claim}</p>
                       <details>
-                        <summary>查看零假设与证伪条件</summary>
-                        <p><strong>H₀：</strong>{hypothesis.null_hypothesis}</p>
+                        <summary>查看零假设与可证伪条件</summary>
+                        <p><strong>H₀（零假设）：</strong>{hypothesis.null_hypothesis}</p>
                         <ul>{hypothesis.falsification_conditions.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>
                       </details>
                     </article>
@@ -710,25 +864,25 @@ export default function App() {
 
             <aside>
               <div className="section-title">
-                <h3>预注册实验</h3>
-                <span>不可静默修改</span>
+                <h3>实验方案（已锁定）</h3>
+                <span>开始实验后不再改动</span>
               </div>
               {project.experiment_plan ? (
                 <div className="plan">
                   <p><b>协议</b>{project.experiment_plan.protocols.join("、")}</p>
                   <p><b>检测器</b>{project.experiment_plan.detectors.join("、")}</p>
                   <p><b>K</b>{project.experiment_plan.shots.join(" / ")}</p>
-                  <p><b>重复</b>{project.experiment_plan.seeds.length} seeds</p>
-                  <p><b>预算</b>{project.experiment_plan.estimated_gpu_hours} GPU hours</p>
-                  <small className="plan-state">实验范围已冻结，执行期间不会静默修改。</small>
+                  <p><b>随机种子</b>{project.experiment_plan.seeds.length} 个</p>
+                  <p><b>预计耗时</b>{project.experiment_plan.estimated_gpu_hours} GPU 小时</p>
+                  <small className="plan-state">实验范围在开始时已锁定，运行期间不会改动。</small>
                 </div>
               ) : (
-                <p className="placeholder">实验计划将在假设审查后生成。</p>
+                <p className="placeholder">实验方案将在假设审查后生成。</p>
               )}
 
               <div className="section-title event-title">
-                <h3>Research Ledger</h3>
-                <span>全流程留痕</span>
+                <h3>操作日志</h3>
+                <span>记录每一步操作与系统响应</span>
               </div>
               <ol className="events">
                 {[...project.events].reverse().slice(0, 8).map((event) => (
@@ -743,12 +897,12 @@ export default function App() {
 
           <section className="evidence-panel">
             <div className="section-title">
-              <h3>证据台账</h3>
-              <span>真实检索 · 书目核验 · 声明级核验分离</span>
+              <h3>文献台账</h3>
+              <span>真实检索结果，并标注核验范围</span>
             </div>
             {project.evidence.length === 0 ? (
               <p className="placeholder outcome-placeholder">
-                系统将在证据构建阶段查询 arXiv/Crossref；未读取原文定位前，只标记书目身份。
+                检索阶段将从 arXiv/Crossref 拉取文献；目前只标记书目身份，未读取原文。
               </p>
             ) : (
               <div className="evidence-grid">
@@ -775,20 +929,20 @@ export default function App() {
           {project.runs.length > 0 && (
             <section className="run-panel">
               <div className="section-title">
-                <h3>实验执行队列</h3>
-                <span>冻结支持集 → 隔离执行 → 统一指标</span>
+                <h3>实验执行记录</h3>
+                <span>支持集已锁定 · 隔离执行 · 统一指标</span>
               </div>
               <div className="run-table" role="table" aria-label="实验运行">
                 <div className="run-row run-header" role="row">
-                  <span>Run</span><span>配置</span><span>协议</span><span>状态</span><span>Image AUROC</span>
+                  <span>编号</span><span>配置</span><span>协议</span><span>状态</span><span>识别准确率</span>
                 </div>
                 {project.runs.slice(0, 20).map((run) => (
                   <div className="run-row" role="row" key={run.id}>
                     <code>{run.id.slice(-8)}</code>
-                    <span>{run.detector} · {run.category} · K={run.shots} · s{run.seed}</span>
+                    <span>{run.detector} · {run.category} · K={run.shots} · 种子 {run.seed}</span>
                     <span>{run.protocol}<small>{run.selection_strategy}</small></span>
                     <b className={`run-status ${run.status}`}>{run.status}</b>
-                    <span>{run.metrics.image_auroc?.toFixed(4) ?? "—"}{run.verified && <small>verified</small>}</span>
+                    <span>{run.metrics.image_auroc?.toFixed(4) ?? "—"}{run.verified && <small>已核验</small>}</span>
                   </div>
                 ))}
               </div>
@@ -799,22 +953,22 @@ export default function App() {
             <div>
               <div className="section-title">
                 <h3>假设判定</h3>
-                <span>真实 Run → 统计证据</span>
+                <span>基于真实实验结果的统计结论</span>
               </div>
               {project.findings.length === 0 ? (
                 <p className="placeholder outcome-placeholder">
-                  导入真实实验结果并完成统计分析后，显示支持、部分支持、证伪或证据不足。
+                  导入真实实验结果并完成统计分析后，会显示：支持、部分支持、证伪或证据不足。
                 </p>
               ) : (
                 project.findings.map((finding) => (
                   <article className="outcome-item" key={finding.id}>
                     <div className="hypothesis-head">
                       <b>{finding.claim_verdict.replace("_", " ").toUpperCase()}</b>
-                      {finding.effect_size !== null && <em>effect {finding.effect_size.toFixed(4)}</em>}
+                      {finding.effect_size !== null && <em>效应量 {finding.effect_size.toFixed(4)}</em>}
                     </div>
                     <p>{finding.statement}</p>
                     <small>
-                      n={finding.sample_size} · p={finding.p_value?.toFixed(4) ?? "—"} · {finding.analysis_method ?? "未执行统计检验"}
+                      样本数 n={finding.sample_size} · p值={finding.p_value?.toFixed(4) ?? "—"} · {finding.analysis_method ?? "未执行统计检验"}
                     </small>
                   </article>
                 ))
@@ -822,12 +976,12 @@ export default function App() {
             </div>
             <div>
               <div className="section-title">
-                <h3>创新审查</h3>
+                <h3>创新性评估</h3>
                 <span>新颖性 · 机制 · 边界 · 复现</span>
               </div>
               {project.innovations.length === 0 ? (
                 <p className="placeholder outcome-placeholder">
-                  未通过实验和文献双重校验前，系统不会把创新候选标记为已获支持。
+                  在实验与文献双重校验通过之前，创新候选不会被标记为"已获支持"。
                 </p>
               ) : (
                 project.innovations.map((innovation) => (
@@ -853,7 +1007,7 @@ export default function App() {
       {error && <p className="error" role="alert">{error}</p>}
       {health?.runtime.includes("mock") && (
         <p className="development-note">
-          当前为流程开发模式：研究候选均标记为未验证，不会产生伪造实验指标。
+          当前为开发演示模式：所有研究结果均为示例，不会生成真实的实验数据。
         </p>
       )}
     </main>
