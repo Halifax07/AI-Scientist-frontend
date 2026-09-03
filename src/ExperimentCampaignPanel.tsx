@@ -137,7 +137,7 @@ function hypothesisHasRunnableStrategies(
   if (!contract) return false;
   const builtinStrategies = new Set(["random", "k_center"]);
   return [contract.treatment, contract.control].every((name) =>
-    builtinStrategies.has(name)
+    (name !== null && builtinStrategies.has(name))
     || (project.method_implementations ?? []).some((implementation) =>
       implementation.kind === "selection_strategy"
       && implementation.hypothesis_id === hypothesis.id
@@ -362,7 +362,7 @@ export function ExperimentCampaignPanel({
           <details className="hypothesis-boundary">
             <summary>查看这条假设如何被证伪</summary>
             <p><strong>零假设：</strong>{campaignHypothesis.null_hypothesis}</p>
-            <ul>{campaignHypothesis.falsification_conditions.map((item) => <li key={item}>{item}</li>)}</ul>
+            <ul>{campaignHypothesis.falsification_conditions.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>
           </details>
         </section>
       ) : (
@@ -449,7 +449,7 @@ export function ExperimentCampaignPanel({
                 <details>
                   <summary>查看该创新点的实验指导</summary>
                   <ol>
-                    {hypothesis.experiment_guidance.map((item) => <li key={item}>{item}</li>)}
+                    {hypothesis.experiment_guidance.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}
                   </ol>
                 </details>
                 {isCompleted && (
@@ -484,6 +484,7 @@ export function ExperimentCampaignPanel({
               value={datasetPath}
               onChange={(event) => setDatasetPath(event.target.value)}
               disabled={busy}
+              placeholder="请输入 MVTec AD 数据集的绝对路径，例如 F:\mvtec_anomaly_detection"
             />
             <button disabled={busy || datasetPath.trim().length < 3} onClick={onAudit}>
               {busy ? "正在审计…" : "审计并冻结数据"}
@@ -577,9 +578,14 @@ export function ExperimentCampaignPanel({
               </button>
             )}
             {campaign.status === "awaiting_feedback" && (
+              // 等待汇总时一律走 round review（后端会按执行模式路由：并行 → 全量
+              // 汇总并关闭 campaign，串行 → 汇总当前 Round 并进入下一个创新点）。
+              // 不能绑定 onExecuteParallel：执行流端点只接受 active campaign，
+              // 而 driveExperimentLoop 对 parallel+awaiting_feedback 会直接返回，
+              // 导致按钮点击后什么都不发生，界面永远卡在等待汇总。
               <button
                 disabled={busy}
-                onClick={() => void (campaign.execution_mode === "parallel" ? onExecuteParallel() : onReviewRound())}
+                onClick={() => void onReviewRound()}
               >
                 {busy
                   ? "AI 正在汇总…"
@@ -589,9 +595,17 @@ export function ExperimentCampaignPanel({
               </button>
             )}
             {campaign.status === "completed" && project.stage === "experiments_queued" && (
-              <button disabled={busy} onClick={onFinalize}>
-                {busy ? "正在锁定…" : "锁定结果并进入统计分析"}
-              </button>
+              // 没有成功且核验的 run 时后端 finalize 会拒绝（不会把失败当结果分析），
+              // 此时提供"重新执行"入口重建实验队列；有核验结果才允许锁定进统计。
+              verifiedRuns > 0 ? (
+                <button disabled={busy} onClick={onFinalize}>
+                  {busy ? "正在锁定…" : "锁定结果并进入统计分析"}
+                </button>
+              ) : (
+                <button disabled={busy} onClick={onInitialize}>
+                  {busy ? "正在重新建立实验队列…" : "重新执行失败实验"}
+                </button>
+              )
             )}
           </div>
 

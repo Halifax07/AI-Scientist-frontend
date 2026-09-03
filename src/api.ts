@@ -23,6 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<Health>("/health"),
   listProjects: () => request<Project[]>("/api/v1/projects"),
+  getProject: (projectId: string) => request<Project>(`/api/v1/projects/${projectId}`),
   createDemo: () => request<Project>("/api/v1/projects/demo", { method: "POST" }),
   createIdeation: async (prompt: string) => {
     const project = await request<Project>("/api/v1/projects", {
@@ -65,6 +66,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ approved_by: "demo-reviewer" }),
     }),
+  regenerateExperimentPlan: (projectId: string) =>
+    request<Project>(`/api/v1/projects/${projectId}/experiment-plan/regenerate`, {
+      method: "POST",
+    }),
   auditDataset: (projectId: string, root: string) =>
     request<Project>(`/api/v1/projects/${projectId}/dataset/audit`, {
       method: "POST",
@@ -94,7 +99,7 @@ export const api = {
         detector,
         device: "cuda:0",
         max_rounds: 3,
-        max_runs: 24,
+        max_runs: 60,
       }),
     }),
   autoStartCampaign: (

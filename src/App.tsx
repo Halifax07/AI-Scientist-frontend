@@ -105,7 +105,8 @@ async function approveWithRequiredMethods(project: Project): Promise<Project> {
     const builtinStrategies = new Set(["random", "k_center"]);
     const implementations = project.method_implementations ?? [];
     const hasMissingImplementation = [contract.treatment, contract.control].some((name) =>
-      !builtinStrategies.has(name)
+      name !== null
+      && !builtinStrategies.has(name)
       && !implementations.some((implementation) =>
         implementation.kind === "selection_strategy"
         && implementation.hypothesis_id === hypothesisId
@@ -144,9 +145,15 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [researchPrompt, setResearchPrompt] = useState("");
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
-  const [datasetPath, setDatasetPath] = useState(
-    "E:\\揭榜挂帅\\AI Scientist\\data\\mvtec_anomaly_detection",
-  );
+  // 数据集根目录因机器而异，不写死任何人的本地路径：默认留空，仅记忆
+  // 当前浏览器最近一次填写过的路径，避免每次重新输入。
+  const [datasetPath, setDatasetPath] = useState(() => {
+    try {
+      return localStorage.getItem("fsad.datasetRoot") ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const [streamEvents, setStreamEvents] = useState<ExperimentProgressEvent[]>([]);
   const [cycleGuidance, setCycleGuidance] = useState(
@@ -157,6 +164,15 @@ export default function App() {
     api.health().then(setHealth).catch((reason) => setError(String(reason)));
     api.listProjects().then(setRecentProjects).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    try {
+      if (datasetPath) localStorage.setItem("fsad.datasetRoot", datasetPath);
+      else localStorage.removeItem("fsad.datasetRoot");
+    } catch {
+      // 隐私模式等场景下 localStorage 不可用，仅影响“记住路径”便利性。
+    }
+  }, [datasetPath]);
 
   useEffect(() => {
     setStreamEvents(project?.experiment_progress?.slice(-160) ?? []);
@@ -310,24 +326,45 @@ export default function App() {
     try {
       const updated = await api.rankHypotheses(project.id, rankings, true);
       setProject(updated);
+      if (!datasetPath.trim()) {
+        setRunNotice(
+          "排名已保存并完成预注册。请在本机实验面板输入数据集的绝对路径，"
+          + "点击「审计并冻结数据」，再启动所选创新点的闭环实验。",
+        );
+        return true;
+      }
       setRunNotice("用户排名已记录；系统正在自动审计数据、预注册并启动所选创新点的并行实验…");
       // The ranking is the only scientific decision gate.  If a dataset path is
       // already available, continue the operational stages automatically; a
       // missing/invalid path leaves the ranked project intact for manual retry.
-      if (datasetPath.trim()) {
-        try {
-          const audited = await api.auditDataset(updated.id, datasetPath.trim());
-          setProject(audited);
-          await initializeAndRun(audited);
-        } catch (reason) {
-          setError(reason instanceof Error ? reason.message : String(reason));
-          setRunNotice("排名已保存，但数据审计或自动实验未启动；请在实验面板修正数据路径后重试。");
-        }
+      try {
+        const audited = await api.auditDataset(updated.id, datasetPath.trim());
+        setProject(audited);
+        await initializeAndRun(audited);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+        setRunNotice("排名已保存，但数据审计或自动实验未启动；请在实验面板修正数据路径后重试。");
       }
       return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 排名提交被拒绝时重新拉取项目：候选可能已在后台被 AI 修正/重新生成
+  //（同一项目、同一轮次，但假设 id 集合已变化），刷新后排名面板会跟随重建。
+  async function reloadProject() {
+    if (!project) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const fresh = await api.getProject(project.id);
+      setProject(fresh);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
     }
@@ -526,6 +563,8 @@ export default function App() {
                 project={project}
                 busy={busy}
                 onSubmit={submitHypothesisRanking}
+                submitError={error}
+                onReload={() => void reloadProject()}
               />
             )}
 
@@ -661,7 +700,7 @@ export default function App() {
                       <details>
                         <summary>查看零假设与证伪条件</summary>
                         <p><strong>H₀：</strong>{hypothesis.null_hypothesis}</p>
-                        <ul>{hypothesis.falsification_conditions.map((item) => <li key={item}>{item}</li>)}</ul>
+                        <ul>{hypothesis.falsification_conditions.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>
                       </details>
                     </article>
                   ))}

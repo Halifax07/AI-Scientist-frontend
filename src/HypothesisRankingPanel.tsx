@@ -5,6 +5,10 @@ interface Props {
   project: Project;
   busy: boolean;
   onSubmit: (rankings: HypothesisRankingInput[]) => Promise<boolean>;
+  /** 最近一次提交被后端拒绝时的错误详情（例如引用未注册检测器、候选已更新）。 */
+  submitError?: string | null;
+  /** 重新拉取项目最新状态（候选可能已在后台被 AI 修正/重新生成）。 */
+  onReload?: () => void;
 }
 
 interface RankingDraft {
@@ -42,16 +46,47 @@ function initialDrafts(project: Project): Record<string, RankingDraft> {
   ]));
 }
 
-export function HypothesisRankingPanel({ project, busy, onSubmit }: Props) {
+export function HypothesisRankingPanel({
+  project,
+  busy,
+  onSubmit,
+  submitError,
+  onReload,
+}: Props) {
   const [drafts, setDrafts] = useState<Record<string, RankingDraft>>(
     () => initialDrafts(project),
   );
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // 候选假设可能在同一轮次内被后台修正/重新生成（project.id 与 research_cycle
+  // 都不变，但假设 id 集合变了）。面板必须跟随 id 集合重建草稿，否则会一直
+  // 提交服务器已不认识的旧 id，陷入无限 409。
+  const hypothesisSignature = project.hypotheses
+    .map((item) => item.id)
+    .sort()
+    .join(",");
+
   useEffect(() => {
     setDrafts(initialDrafts(project));
     setLocalError(null);
-  }, [project.id, project.research_cycle]);
+  }, [project.id, project.research_cycle, hypothesisSignature]);
+
+  // 后端拒绝文案会点名不可执行的创新点，例如
+  // "创新点 hypothesis_xxx 引用的检测器 … 尚未注册实现，无法进入实验"，或自动
+  // 生成适配器未通过校验/冒烟时的 "创新点 hypothesis_xxx 的自动方法实现失败"。
+  // 只把仍属于当前假设集的 id 视为可移除项，避免误操作。
+  const isImplementationBlock = Boolean(
+    submitError &&
+      /尚未注册实现|没有已注册实现|自动方法实现失败/.test(submitError),
+  );
+  const blockedIds = useMemo(() => {
+    if (!isImplementationBlock || !submitError) return [];
+    const mentioned = [...submitError.matchAll(/hypothesis_[a-zA-Z0-9]+/g)].map(
+      (match) => match[0],
+    );
+    const known = new Set(project.hypotheses.map((item) => item.id));
+    return [...new Set(mentioned)].filter((id) => known.has(id));
+  }, [isImplementationBlock, submitError, project.hypotheses]);
 
   const selectedCount = useMemo(
     () => Object.values(drafts).filter((item) => item.selected).length,
@@ -65,9 +100,12 @@ export function HypothesisRankingPanel({ project, busy, onSubmit }: Props) {
     }));
   }
 
-  async function submit() {
-    const rankings = project.hypotheses.map((hypothesis) => {
-      const draft = drafts[hypothesis.id];
+  function buildRankings(override?: Record<string, Partial<RankingDraft>>) {
+    return project.hypotheses.map((hypothesis) => {
+      const draft = {
+        ...(drafts[hypothesis.id] ?? { selected: false, priority: 1, score: 50, note: "" }),
+        ...(override?.[hypothesis.id] ?? {}),
+      };
       return {
         hypothesis_id: hypothesis.id,
         selected: draft.selected,
@@ -76,12 +114,31 @@ export function HypothesisRankingPanel({ project, busy, onSubmit }: Props) {
         note: draft.note.trim() || null,
       };
     });
+  }
+
+  async function submit(override?: Record<string, Partial<RankingDraft>>) {
+    const rankings = buildRankings(override);
     if (!rankings.some((item) => item.selected)) {
       setLocalError("至少选择一个创新点进入实验验证。");
       return;
     }
     setLocalError(null);
     await onSubmit(rankings);
+  }
+
+  // 移除被后端点名（引用未注册检测器/方法）的创新点后重试：后端只校验被选中的
+  // 创新点，跳过不可执行的候选即可进入预注册。
+  async function dropBlockedAndSubmit() {
+    if (blockedIds.length === 0) return;
+    const drop = Object.fromEntries(blockedIds.map((id) => [id, { selected: false }]));
+    setDrafts((current) => {
+      const next = { ...current };
+      for (const id of blockedIds) {
+        if (next[id]) next[id] = { ...next[id], selected: false };
+      }
+      return next;
+    });
+    await submit(drop);
   }
 
   return (
@@ -162,6 +219,32 @@ export function HypothesisRankingPanel({ project, busy, onSubmit }: Props) {
           );
         })}
       </div>
+
+      {submitError && (
+        <div className="ranking-recovery" role="alert">
+          <p className="ranking-recovery-message">
+            排名提交被拒绝：{submitError}
+          </p>
+          <div className="ranking-recovery-actions">
+            <button type="button" disabled={busy || !onReload} onClick={onReload}>
+              重新加载最新候选
+            </button>
+            {isImplementationBlock && blockedIds.length > 0 && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void dropBlockedAndSubmit()}
+              >
+                移除 {blockedIds.length} 个引用未注册实现的创新点并重试
+              </button>
+            )}
+          </div>
+          <small>
+            候选可能在后台已被 AI 修正或重新生成（id 会变化），先重新加载；若提示某创新点引用
+            未注册的检测器/方法，移除它即可（其余创新点照常进入预注册实验）。
+          </small>
+        </div>
+      )}
 
       <div className="ranking-footer">
         <small>

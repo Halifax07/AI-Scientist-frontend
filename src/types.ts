@@ -37,10 +37,187 @@ export interface EvidenceRecord {
 export interface AnalysisContract {
   kind: "selection_main_effect" | "detector_interaction" | "query_adaptation";
   metric: string;
-  treatment: string;
-  control: string;
+  treatment: string | null;
+  control: string | null;
+  design_mode?: "paired_comparison" | "custom_design";
   alpha?: number;
   minimum_pairs?: number;
+}
+
+export type ExperimentFactorField =
+  | "selection_strategy"
+  | "detector"
+  | "category"
+  | "shots"
+  | "seed"
+  | "protocol";
+
+export interface ExperimentFactorSpec {
+  name: string;
+  field?: ExperimentFactorField | null;
+  run_field?: ExperimentFactorField | null;
+  levels: unknown[];
+  description?: string | null;
+}
+
+export interface ExperimentConditionSpec {
+  id: string;
+  label?: string | null;
+  factor_values: Record<string, unknown>;
+}
+
+export type ExperimentAnalysisMode =
+  | "group_comparison"
+  | "factor_effects"
+  | "ordered_trend"
+  | "distribution_summary";
+
+export interface ExperimentAnalysisSpec {
+  mode: ExperimentAnalysisMode | string;
+  primary_metric?: string | null;
+  metric?: string | null;
+  alpha?: number;
+  minimum_pairs?: number;
+  ordered_factor?: string | null;
+  baseline_condition_id?: string | null;
+}
+
+export type ExperimentCardBlockKind =
+  | "narrative"
+  | "progress"
+  | "metrics"
+  | "chart"
+  | "table"
+  | "runs"
+  | "evidence"
+  | "decision"
+  | "diagnostics"
+  | "insight"
+  | "callout"
+  | "key_value"
+  | "timeline";
+export type ExperimentCardBlockSource =
+  | "design"
+  | "progress"
+  | "condition_statistics"
+  | "condition_effects"
+  | "factor_effects"
+  | "interaction_summary"
+  | "ordered_trend"
+  | "distribution_summary"
+  | "runs"
+  | "evidence"
+  | "feedback"
+  | "diagnostics";
+export type ExperimentCardChartMark = "bar" | "line" | "point" | "heatmap" | "interval";
+export type ExperimentCardSpan = "full" | "half" | "third";
+
+export interface ExperimentCardBlockSpec {
+  id?: string | null;
+  kind: ExperimentCardBlockKind;
+  source: ExperimentCardBlockSource;
+  chart_mark?: ExperimentCardChartMark | null;
+  span?: ExperimentCardSpan;
+  title?: string | null;
+  content?: string | null;
+  config?: Record<string, unknown>;
+}
+
+export interface ExperimentCardPresentationSpec {
+  schema_version: 2;
+  layout: "stack" | "split" | "grid" | "sequence";
+  density: "compact" | "comfortable";
+  blocks: ExperimentCardBlockSpec[];
+}
+
+export interface ExperimentDesignSpec {
+  id: string;
+  name: string;
+  hypothesis_id?: string | null;
+  question?: string | null;
+  rationale?: string | null;
+  factors: ExperimentFactorSpec[];
+  conditions: ExperimentConditionSpec[];
+  analysis: ExperimentAnalysisSpec;
+  presentation_spec?: ExperimentCardPresentationSpec | null;
+  design_type?: string;
+  design_mode?: "paired_comparison" | "custom_design";
+  support_selection_strategy?: string | null;
+  default_selection_strategy?: string | null;
+  max_runs?: number | null;
+  budget?: number | null;
+  purpose?: string | null;
+}
+
+export interface ExperimentConditionSummary {
+  condition_id: string;
+  label?: string | null;
+  factor_values: Record<string, unknown>;
+  sample_size: number;
+  mean: number | null;
+  standard_deviation?: number | null;
+  minimum?: number | null;
+  maximum?: number | null;
+  median?: number | null;
+  source_run_ids: string[];
+}
+
+export interface ExperimentConditionEffectSummary {
+  condition_id: string;
+  baseline_condition_id?: string | null;
+  effect: number;
+  sample_size: number;
+  source_run_ids: string[];
+}
+
+export interface ExperimentFactorEffectSummary {
+  factor: string;
+  level_means: Record<string, number>;
+  effect: number | null;
+  sample_size: number;
+  source_run_ids: string[];
+}
+
+export interface ExperimentInteractionSummary {
+  factor_a: string;
+  factor_b: string;
+  levels: Record<string, unknown[]>;
+  cell_means: Record<string, number>;
+  simple_effects: Record<string, number>;
+  difference_in_differences: number | null;
+  sample_size: number;
+  source_run_ids: string[];
+}
+
+export interface ExperimentTrendPoint {
+  level: unknown;
+  mean: number | null;
+  sample_size: number;
+  source_run_ids: string[];
+}
+
+export interface ExperimentDistributionSummary {
+  sample_size: number;
+  mean: number | null;
+  standard_deviation?: number | null;
+  minimum?: number | null;
+  maximum?: number | null;
+  median?: number | null;
+}
+
+export interface ExperimentSummary {
+  analysis_mode: string;
+  primary_metric: string;
+  sample_size: number;
+  evidence_status: "not_ready" | "below_threshold" | "sample_threshold_met" | "insufficient" | "mixed" | "sufficient" | string;
+  inference_status?: "not_performed" | string;
+  source_run_ids: string[];
+  condition_statistics: ExperimentConditionSummary[];
+  condition_effects?: ExperimentConditionEffectSummary[];
+  factor_effects: ExperimentFactorEffectSummary[];
+  interaction_summary?: ExperimentInteractionSummary[];
+  ordered_trend: ExperimentTrendPoint[];
+  distribution_summary?: ExperimentDistributionSummary | null;
 }
 
 export interface Hypothesis {
@@ -83,6 +260,10 @@ export interface ExperimentPlan {
   estimated_gpu_hours: number;
   preregistration_digest: string;
   approved: boolean;
+  designs?: ExperimentDesignSpec[];
+  design_generation_status?: "ai_selected" | "fallback" | "needs_correction";
+  design_generation_fallback_reason?: string | null;
+  design_generation_errors?: string[];
 }
 
 export interface WorkflowEvent {
@@ -111,6 +292,7 @@ export interface AnalysisFinding {
 
 export interface ExperimentRun {
   id: string;
+  plan_id: string;
   hypothesis_id: string;
   dataset: string;
   category: string;
@@ -122,9 +304,16 @@ export interface ExperimentRun {
   iteration: number;
   round_id: string | null;
   node_id: string | null;
+  condition_id?: string | null;
+  factor_values?: Record<string, unknown>;
   phase: string;
   status: "planned" | "queued" | "running" | "succeeded" | "failed";
   metrics: Record<string, number>;
+  artifact_paths?: string[];
+  preparation_path?: string | null;
+  execution_record_path?: string | null;
+  code_revision?: string | null;
+  environment_digest?: string | null;
   verified: boolean;
   result_source: "real_executor" | "external_import" | "synthetic_test" | null;
   started_at: string | null;
@@ -199,6 +388,8 @@ export interface ExperimentRound {
   objective: string;
   rationale: string;
   hypothesis_id: string;
+  design_id?: string | null;
+  presentation_spec?: ExperimentCardPresentationSpec | null;
   treatment: string;
   control: string;
   metric: string;
@@ -209,6 +400,7 @@ export interface ExperimentRound {
   run_ids: string[];
   status: "planned" | "running" | "awaiting_guidance" | "ready_for_feedback" | "completed" | "failed";
   result_summary: Record<string, unknown>;
+  summary?: ExperimentSummary | null;
   feedback: ExperimentFeedback | null;
   efficiency: Record<string, number>;
 }
@@ -217,6 +409,7 @@ export interface ExperimentCampaign {
   id: string;
   hypothesis_id: string;
   hypothesis_ids: string[];
+  design_id?: string | null;
   dataset_manifest_path: string;
   protocol: string;
   candidate_pool_size: number;
@@ -237,6 +430,7 @@ export interface ExperimentCampaign {
   termination_reason: string | null;
   nodes: ExperimentNode[];
   rounds: ExperimentRound[];
+  summary?: ExperimentSummary | null;
   next_action: string;
 }
 
@@ -367,6 +561,7 @@ export interface Project {
   gaps: unknown[];
   hypotheses: Hypothesis[];
   experiment_plan: ExperimentPlan | null;
+  experiment_plan_history: ExperimentPlan[];
   dataset_audits: DatasetAudit[];
   experiment_campaign: ExperimentCampaign | null;
   experiment_campaign_history: ExperimentCampaign[];

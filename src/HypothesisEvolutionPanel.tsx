@@ -37,9 +37,13 @@ export function HypothesisEvolutionPanel({ project }: Props) {
       confidenceInterval: null,
       boundaryConditions: currentHypothesis?.analysis_contract ? [
         `指标：${currentHypothesis.analysis_contract.metric}`,
-        `最小配对数：${currentHypothesis.analysis_contract.minimum_pairs ?? 6}`,
-        `处理组：${currentHypothesis.analysis_contract.treatment}`,
-        `对照组：${currentHypothesis.analysis_contract.control}`,
+        ...(currentHypothesis.analysis_contract.design_mode === "paired_comparison"
+          ? [
+            `最小配对数：${currentHypothesis.analysis_contract.minimum_pairs ?? 6}`,
+            `处理组：${currentHypothesis.analysis_contract.treatment}`,
+            `对照组：${currentHypothesis.analysis_contract.control}`,
+          ]
+          : []),
       ] : [],
     },
     ...findings.map((finding, idx) => ({
