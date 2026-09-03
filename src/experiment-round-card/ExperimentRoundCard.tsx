@@ -419,7 +419,7 @@ function LegacyRoundCard({ project, campaign, round }: RoundCardProps) {
     feedback: <FeedbackSection round={round} />,
   };
   return <article className={`round-card ${round.status} round-template-${spec.template} round-density-${spec.density} round-emphasis-${spec.emphasis}`} data-template={spec.template}>
-    <header className="round-card-header"><div><span className="round-index">ROUND {round.index}</span><b>{phaseLabel(round.phase)}</b><strong>{templateLabel(spec.template)}</strong></div><em>{roundStatusLabel(round.status)}</em></header>
+    <header className="round-card-header"><div><span className="round-index">第 {round.index} 轮</span><b>{phaseLabel(round.phase)}</b><strong>{templateLabel(spec.template)}</strong></div><em>{roundStatusLabel(round.status)}</em></header>
     <div className="round-card-title"><p className="eyebrow">绑定创新点：{project.hypotheses.find((hypothesis) => hypothesis.id === round.hypothesis_id)?.title ?? round.hypothesis_id}</p><h4>{round.objective}</h4><p className="round-rationale">{round.rationale}</p></div>
     <div className="round-card-sections">{spec.sections.map((section) => <div key={section}>{sections[section]}</div>)}</div>
   </article>;

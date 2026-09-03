@@ -22,13 +22,13 @@ main {
   gap: 16px;
 }
 
+.topbar { padding-bottom: 12px; }
 h1, h2, h3, h4, p { margin-top: 0; }
-h1 { margin-bottom: 3px; font-size: 30px; }
+h1 { margin-bottom: 4px; font-size: 26px; }
 h2 { margin-bottom: 8px; }
 h3 { margin-bottom: 0; }
 .eyebrow { margin-bottom: 4px; color: #36765a; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
-.subtitle, .project-heading p, .section-title span { color: #65736c; }
-.subtitle { margin-bottom: 0; }
+.subtitle { margin-bottom: 0; color: #4d5d56; line-height: 1.6; font-size: 14px; max-width: 720px; }
 .runtime { font-size: 13px; }
 .status { padding: 6px 10px; border-radius: 999px; }
 .status.warning { background: #fff1c7; color: #805d00; }
@@ -40,9 +40,10 @@ h3 { margin-bottom: 0; }
   border-radius: 14px;
 }
 
-.empty-state { margin-top: 70px; padding: 54px; display: flex; justify-content: center; }
+.empty-state { margin-top: 48px; padding: 36px; display: flex; justify-content: center; }
 .ideation-card { width: min(760px, 100%); display: grid; gap: 14px; text-align: left; }
 .ideation-card h2, .ideation-card p { margin: 0; }
+.ideation-card .ideation-lead { color: #4d5d56; line-height: 1.65; font-size: 14px; }
 .ideation-card label { font-weight: 700; }
 .ideation-card textarea {
   width: 100%;
@@ -56,6 +57,81 @@ h3 { margin-bottom: 0; }
   line-height: 1.6;
 }
 .ideation-card textarea:focus { border-color: #176c4a; outline: 3px solid #dceee5; }
+.ideation-card input[type="text"] {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #cfd9d3;
+  border-radius: 10px;
+  background: #fbfdfb;
+  color: #19231f;
+  font: inherit;
+}
+.ideation-card input[type="text"]:focus {
+  border-color: #176c4a;
+  outline: 3px solid #dceee5;
+}
+.mode-toggle {
+  display: inline-flex;
+  align-self: start;
+  border: 1px solid #cfd9d3;
+  border-radius: 10px;
+  background: #f3f7f4;
+  padding: 4px;
+  gap: 4px;
+}
+.mode-toggle button {
+  background: transparent;
+  color: #2a3b34;
+  padding: 8px 14px;
+  border-radius: 8px;
+}
+.mode-toggle button.active {
+  background: #176c4a;
+  color: #fff;
+}
+.keyword-input {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.keyword-input input { flex: 1; }
+.keyword-input button { white-space: nowrap; }
+.keyword-tags {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.keyword-tags li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e8f1ec;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: #1f2e27;
+}
+.keyword-tags li button {
+  background: transparent;
+  color: #1f2e27;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  border-radius: 999px;
+  font-size: 16px;
+}
+.keyword-tags li button:hover {
+  background: #cfd9d3;
+}
+.input-hint {
+  color: #4d5d56;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .ideation-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 button {
   border: 0;
@@ -296,9 +372,7 @@ aside { padding: 18px; align-self: start; }
   border-radius: 999px;
   background: #f3f6f4;
   color: #53655b;
-  font: 700 11px/1 Inter, sans-serif;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  font: 700 12px/1 "Microsoft YaHei", Inter, sans-serif;
   white-space: nowrap;
 }
 .campaign-state.active { border-color: #acd4bf; background: #e4f3eb; color: #176c4a; }
@@ -591,17 +665,48 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 .round-card.running, .round-card.planned { border-top: 3px solid #2a7b56; }
 .round-card.ready_for_feedback { border-top: 3px solid #c59614; }
 .round-card.completed { border-top: 3px solid #5e86a5; }
+.round-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.round-card-top .round-head { margin-bottom: 0; flex: 1; min-width: 0; }
 .round-head { display: flex; align-items: center; gap: 8px; margin-bottom: 11px; font-size: 10px; text-transform: uppercase; }
 .round-head span { padding: 4px 6px; border-radius: 5px; color: #176c4a; background: #e2f1e9; font-weight: 800; }
 .round-head b { color: #536159; }
 .round-head em { margin-left: auto; color: #7a8780; font-style: normal; }
+.round-toggle {
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid #c9dfd2;
+  border-radius: 999px;
+  background: #fff;
+  color: #176c4a;
+  font: 700 11px/1 inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease;
+}
+.round-toggle:hover { background: #eff6f2; border-color: #5e9e7e; }
+.round-toggle[aria-expanded="true"] { background: #e2f1e9; border-color: #5e9e7e; }
+.round-card.is-collapsed .round-rationale { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.round-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px dashed #d5e3d9;
+  border-radius: 6px;
+  background: #f8fbf9;
+  font-size: 11px;
+  color: #65736c;
+}
+.round-summary-strip span { display: inline-flex; align-items: baseline; gap: 4px; }
+.round-summary-strip b { color: #1b4e39; font-size: 13px; font-weight: 700; }
 .round-card h4 { margin: 0 0 7px; font-size: 14px; line-height: 1.5; }
 .round-rationale { min-height: 38px; margin: 0 0 13px; color: #6b7871; font-size: 12px; line-height: 1.55; }
 .round-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e7ede9; }
 .round-section > b { display: block; color: #294736; font-size: 12px; }
 .round-section > p { margin: 6px 0 0; color: #506158; font-size: 12px; line-height: 1.55; }
 .round-section > small { display: block; margin-top: 6px; color: #6c7b72; font-size: 11px; line-height: 1.5; }
-.round-progress { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 12px 0 0; padding: 11px 0 0; border-top: 1px solid #e7ede9; }
+.round-progress { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin: 12px 0 0; padding: 11px 0 0; border-top: 1px solid #e7ede9; }
 .round-progress div { min-width: 0; text-align: center; }
 .round-progress dt { color: #87928c; font-size: 10px; }
 .round-progress dd { margin: 4px 0 0; color: #253d30; font-size: 14px; font-weight: 700; }
@@ -646,6 +751,12 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 .feedback-note { color: #43534b; background: #f4f6ed; }
 .feedback-note.pending { background: #faf6e9; }
 .feedback-note p { margin: 5px 0 0; line-height: 1.5; }
+.feedback-detail { margin-top: 8px; }
+.feedback-detail summary { color: #176c4a; cursor: pointer; font-weight: 600; font-size: 11px; padding: 4px 0; }
+.feedback-detail summary:hover { color: #14543b; text-decoration: underline; }
+.feedback-detail[open] summary { margin-bottom: 6px; }
+.feedback-detail .reasoning-chain,
+.feedback-detail .alternative-decisions { margin-top: 0; padding: 8px 10px; }
 
 .round-card { overflow: hidden; padding: 0; border-radius: 8px; border-color: #d5e1da; box-shadow: 0 4px 16px rgba(28, 61, 45, .06); }
 .round-card.running, .round-card.planned { border-top: 3px solid #2a7b56; }
@@ -806,19 +917,20 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 
 /* ========== 新增：AI 推理链与反馈优化样式 ========== */
 
-/* AI 决策推理链 */
+/* 决策依据：步骤式推理 */
 .reasoning-chain {
-  margin-top: 12px;
-  padding: 12px;
-  background: #f0f4ff;
-  border-radius: 8px;
-  border-left: 4px solid #4285f4;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #f5f8f5;
+  border-radius: 6px;
+  border: 1px solid #dfe7e2;
+  border-left: 3px solid #5e9e7e;
 }
 
 .reasoning-chain h5 {
-  margin: 0 0 10px 0;
-  font-size: 12px;
-  color: #1a56db;
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  color: #315544;
   font-weight: 600;
 }
 
@@ -828,9 +940,10 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 }
 
 .reasoning-chain li {
-  margin-bottom: 10px;
-  font-size: 12px;
-  line-height: 1.5;
+  margin-bottom: 8px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #43534b;
 }
 
 .reasoning-chain li:last-child {
@@ -844,11 +957,11 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
   line-height: 18px;
   text-align: center;
   border-radius: 50%;
-  background: #4285f4;
-  color: white;
+  background: #e2f1e9;
+  color: #176c4a;
   font-size: 10px;
-  font-weight: 600;
-  margin-right: 8px;
+  font-weight: 700;
+  margin-right: 6px;
 }
 
 .reasoning-chain .step-content {
@@ -859,54 +972,56 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 }
 
 .reasoning-chain .observation {
-  color: #374151;
+  color: #43534b;
 }
 
 .reasoning-chain .arrow {
-  color: #4285f4;
-  font-weight: bold;
+  color: #5e9e7e;
 }
 
 .reasoning-chain .conclusion {
-  color: #1f2937;
+  color: #1b4e39;
   font-weight: 500;
 }
 
 .reasoning-chain .confidence {
   font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
   font-weight: 500;
+  background: #edf3ef;
+  color: #5c6d64;
 }
 
 .reasoning-chain .confidence.高 {
-  background: #dcfce7;
-  color: #166534;
+  background: #dceee5;
+  color: #176c4a;
 }
 
 .reasoning-chain .confidence.中 {
-  background: #fef9c3;
-  color: #854d0e;
+  background: #f4ecd4;
+  color: #806300;
 }
 
 .reasoning-chain .confidence.低 {
-  background: #fee2e2;
-  color: #991b1b;
+  background: #f6dadc;
+  color: #9d2626;
 }
 
 /* 备选方案展示 */
 .alternative-decisions {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: #fffbeb;
-  border-radius: 8px;
-  border-left: 4px solid #f59e0b;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f8faf6;
+  border-radius: 6px;
+  border: 1px solid #dfe7e2;
+  border-left: 3px solid #c59614;
 }
 
 .alternative-decisions h5 {
-  margin: 0 0 8px 0;
-  font-size: 12px;
-  color: #92400e;
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  color: #806300;
   font-weight: 600;
 }
 
@@ -917,37 +1032,41 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 
 .alternative-decisions li {
   font-size: 11px;
-  margin-bottom: 4px;
-  color: #78350f;
+  margin-bottom: 3px;
+  color: #5c4a1f;
+  line-height: 1.5;
 }
 
 .alternative-decisions code {
-  background: #fef3c7;
+  background: #f4ecd4;
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: 3px;
   font-size: 10px;
+  color: #735800;
 }
 
 /* 预期改进展示 */
 .expected-improvement {
-  margin-top: 10px;
-  padding: 8px 10px;
-  background: #ecfdf5;
-  border-radius: 6px;
-  border-left: 3px solid #10b981;
+  margin-top: 6px;
+  padding: 7px 10px;
+  background: #f1f8f4;
+  border-radius: 5px;
+  border: 1px solid #dceee5;
+  border-left: 3px solid #5e9e7e;
 }
 
 .expected-improvement h5 {
-  margin: 0 0 4px 0;
+  margin: 0 0 3px 0;
   font-size: 11px;
-  color: #065f46;
+  color: #176c4a;
   font-weight: 600;
 }
 
 .expected-improvement p {
   margin: 0;
   font-size: 11px;
-  color: #047857;
+  color: #315544;
+  line-height: 1.5;
 }
 
 /* ========== 效率图表样式 ========== */
@@ -1021,15 +1140,15 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 }
 
 .efficiency-chart .efficiency-bar.high {
-  background: linear-gradient(to top, #22c55e, #86efac);
+  background: linear-gradient(to top, #176c4a, #5e9e7e);
 }
 
 .efficiency-chart .efficiency-bar.medium {
-  background: linear-gradient(to top, #eab308, #fde047);
+  background: linear-gradient(to top, #c59614, #e7c471);
 }
 
 .efficiency-chart .efficiency-bar.low {
-  background: linear-gradient(to top, #ef4444, #fca5a5);
+  background: linear-gradient(to top, #a04232, #d58878);
 }
 
 .efficiency-chart .bar-value {
@@ -1100,15 +1219,15 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 
 .efficiency-chart .efficiency-summary {
   padding: 10px 12px;
-  background: #eff6ff;
+  background: #f0f8f3;
   border-radius: 6px;
-  border-left: 4px solid #3b82f6;
+  border-left: 3px solid #2a7b56;
 }
 
 .efficiency-chart .efficiency-summary h5 {
   margin: 0 0 6px 0;
   font-size: 12px;
-  color: #1e40af;
+  color: #1b4e39;
 }
 
 .efficiency-chart .efficiency-summary ul {
@@ -1116,11 +1235,11 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
   padding-left: 18px;
   font-size: 12px;
   line-height: 1.6;
-  color: #1e40af;
+  color: #315544;
 }
 
 .efficiency-chart .efficiency-summary strong {
-  color: #1d4ed8;
+  color: #176c4a;
 }
 
 /* ========== 假说演进面板样式 ========== */
@@ -1151,7 +1270,7 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
   top: 0;
   bottom: 0;
   width: 3px;
-  background: linear-gradient(to bottom, #3b82f6, #22c55e);
+  background: linear-gradient(to bottom, #5e9e7e, #2a7b56);
   border-radius: 2px;
 }
 
@@ -1398,7 +1517,7 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
   color: #4b5563;
 }
 
-.dynamic-round-card .dynamic-round-header strong { color: #28597d; border-color: #c6dbe8; background: #edf6fb; }
+.dynamic-round-card .dynamic-round-header strong { color: #176c4a; border-color: #c9dfd2; background: #e5f2e9; }
 .dynamic-round-layout { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; padding: 0 16px 16px; }
 .dynamic-block { min-width: 0; padding-top: 13px; border-top: 1px solid #e2ebe5; }
 .dynamic-block > h5 { margin: 0 0 8px; color: #294736; font-size: 12px; }
@@ -1420,7 +1539,7 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 .dynamic-metric-primary, .dynamic-metric-item { min-width: 0; padding: 9px; background: #f7faf8; }
 .dynamic-metric-primary span, .dynamic-metric-item span, .dynamic-metric-primary small, .dynamic-metric-item small { display: block; color: #718078; font-size: 10px; overflow-wrap: anywhere; }
 .dynamic-metric-primary b, .dynamic-metric-item b { display: block; margin: 4px 0; color: #24553d; overflow-wrap: anywhere; }
-.dynamic-metric-primary strong { display: inline-block; margin-right: 4px; color: #28597d; font-size: 19px; }
+.dynamic-metric-primary strong { display: inline-block; margin-right: 4px; color: #176c4a; font-size: 19px; }
 .dynamic-trace { display: block; grid-column: 1 / -1; margin-top: 6px; color: #718078; line-height: 1.5; overflow-wrap: anywhere; }
 .dynamic-table-wrap { max-width: 100%; overflow-x: auto; }
 .dynamic-table { width: 100%; border-collapse: collapse; font-size: 11px; }

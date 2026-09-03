@@ -552,6 +552,8 @@ export interface Project {
     objective: string;
     application_context: string;
     datasets: Array<{ name: string }>;
+    preset?: string | null;
+    user_guidance?: string[];
   };
   stage: Stage;
   status: string;

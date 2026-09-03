@@ -71,10 +71,8 @@ export function HypothesisRankingPanel({
     setLocalError(null);
   }, [project.id, project.research_cycle, hypothesisSignature]);
 
-  // 后端拒绝文案会点名不可执行的创新点，例如
-  // "创新点 hypothesis_xxx 引用的检测器 … 尚未注册实现，无法进入实验"，或自动
-  // 生成适配器未通过校验/冒烟时的 "创新点 hypothesis_xxx 的自动方法实现失败"。
-  // 只把仍属于当前假设集的 id 视为可移除项，避免误操作。
+  // 后端拒绝文案会点名不可执行的假设，例如提示其引用的检测器尚未注册、
+  // 或 AI 生成的方法未通过检查。只把仍属于当前假设集的 id 视为可移除项。
   const isImplementationBlock = Boolean(
     submitError &&
       /尚未注册实现|没有已注册实现|自动方法实现失败/.test(submitError),
@@ -119,15 +117,15 @@ export function HypothesisRankingPanel({
   async function submit(override?: Record<string, Partial<RankingDraft>>) {
     const rankings = buildRankings(override);
     if (!rankings.some((item) => item.selected)) {
-      setLocalError("至少选择一个创新点进入实验验证。");
+      setLocalError("至少选择一条假设进入实验验证。");
       return;
     }
     setLocalError(null);
     await onSubmit(rankings);
   }
 
-  // 移除被后端点名（引用未注册检测器/方法）的创新点后重试：后端只校验被选中的
-  // 创新点，跳过不可执行的候选即可进入预注册。
+  // 移除被后端点名的不可执行假设后重试：后端只校验被选中的假设，
+  // 跳过不可执行的候选即可继续。
   async function dropBlockedAndSubmit() {
     if (blockedIds.length === 0) return;
     const drop = Object.fromEntries(blockedIds.map((id) => [id, { selected: false }]));
@@ -142,22 +140,22 @@ export function HypothesisRankingPanel({
   }
 
   return (
-    <section className="ranking-panel" aria-label="创新假设排名与筛选">
+    <section className="ranking-panel" aria-label="假设筛选与排序">
       <div className="ranking-panel-heading">
         <div>
-          <p className="eyebrow">Human ranking gate · only interaction before experiments</p>
-          <h3>审阅并筛选创新假设</h3>
+          <p className="eyebrow">选择要验证的假设</p>
+          <h3>为感兴趣的假设打分</h3>
           <p>
-            空白发现、假设生成和 AI 反驳已经在后台完成。请给每个候选一个优先级与分数，
-            只勾选值得投入实验预算的创新点；提交后系统会自动预注册并行 Round。
+            系统已自动完成文献检索、问题定位和假设生成。请为每条假设设置优先级和分数，
+            只勾选愿意投入实验预算的假设。
           </p>
         </div>
         <span className="ranking-count">已选 {selectedCount}/{project.hypotheses.length}</span>
       </div>
 
-      <div className="ranking-table" role="table" aria-label="假设排名表">
+      <div className="ranking-table" role="table" aria-label="假设排序表">
         <div className="ranking-row ranking-header" role="row">
-          <span>验证</span><span>创新假设</span><span>AI 评分</span><span>优先级</span><span>用户评分</span>
+          <span>验证</span><span>假设内容</span><span>AI 评分</span><span>优先级</span><span>你的评分</span>
         </div>
         {project.hypotheses.map((hypothesis, index) => {
           const draft = drafts[hypothesis.id];
@@ -180,20 +178,20 @@ export function HypothesisRankingPanel({
                 <small>
                   {hypothesis.analysis_contract
                     ? `${hypothesis.analysis_contract.treatment} vs ${hypothesis.analysis_contract.control} · ${hypothesis.analysis_contract.metric}`
-                    : "尚无可执行实验契约"}
+                    : "尚无可执行的实验方案"}
                 </small>
                 <textarea
                   value={draft.note}
                   disabled={busy}
                   rows={2}
                   maxLength={3000}
-                  placeholder="可选：为什么选择/暂缓这个创新点？"
+                  placeholder="可选：写一句选择/暂缓的理由"
                   onChange={(event) => update(hypothesis.id, { note: event.target.value })}
                 />
               </div>
               <div className="ranking-ai-score">
                 <strong>{hypothesis.score ? aiScore(hypothesis).toFixed(2) : "—"}</strong>
-                <small>Elo {hypothesis.score?.elo.toFixed(0) ?? "—"}</small>
+                <small>系统评分 {hypothesis.score?.elo.toFixed(0) ?? "—"}</small>
               </div>
               <input
                 className="ranking-number"
@@ -213,7 +211,7 @@ export function HypothesisRankingPanel({
                 value={draft.score}
                 disabled={busy}
                 onChange={(event) => update(hypothesis.id, { score: Number(event.target.value) })}
-                aria-label={`${hypothesis.title} 用户评分`}
+                aria-label={`${hypothesis.title} 你的评分`}
               />
             </div>
           );
@@ -223,7 +221,7 @@ export function HypothesisRankingPanel({
       {submitError && (
         <div className="ranking-recovery" role="alert">
           <p className="ranking-recovery-message">
-            排名提交被拒绝：{submitError}
+            排序提交未通过：{submitError}
           </p>
           <div className="ranking-recovery-actions">
             <button type="button" disabled={busy || !onReload} onClick={onReload}>
@@ -235,25 +233,24 @@ export function HypothesisRankingPanel({
                 disabled={busy}
                 onClick={() => void dropBlockedAndSubmit()}
               >
-                移除 {blockedIds.length} 个引用未注册实现的创新点并重试
+                取消选中 {blockedIds.length} 条不可执行的假设并重试
               </button>
             )}
           </div>
           <small>
-            候选可能在后台已被 AI 修正或重新生成（id 会变化），先重新加载；若提示某创新点引用
-            未注册的检测器/方法，移除它即可（其余创新点照常进入预注册实验）。
+            候选可能在后台已被更新（id 会变化），建议先重新加载；若提示某条假设引用的方法未准备好，取消勾选它即可。
           </small>
         </div>
       )}
 
       <div className="ranking-footer">
         <small>
-          用户排名会写入 Research Ledger；未选创新点保留为候选，不会消耗本轮 GPU 预算。
-          每个已选创新点对应一个 Round，Round 内自动完成三次迭代。
+          你的排序会被保存；未选的假设保留为候选，不会消耗本轮实验预算。
+          每条选中的假设对应一轮实验，自动跑三次。
         </small>
         {localError && <span className="ranking-error">{localError}</span>}
         <button disabled={busy || selectedCount === 0} onClick={() => void submit()}>
-          {busy ? "正在保存排名并生成预注册…" : "确认排名并自动进入实验"}
+          {busy ? "正在保存并准备实验…" : "确认排序，开始实验"}
         </button>
       </div>
     </section>

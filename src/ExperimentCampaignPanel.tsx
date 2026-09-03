@@ -47,8 +47,8 @@ function phaseLabel(value: string) {
 function roundStatusLabel(value: string) {
   return ({
     planned: "等待执行",
-    running: "正在执行",
-    awaiting_guidance: "等待中途指导",
+    running: "执行中",
+    awaiting_guidance: "等待你的建议",
     ready_for_feedback: "等待分析",
     completed: "已完成",
     failed: "执行失败",
@@ -76,7 +76,7 @@ function runStatusLabel(value: Project["runs"][number]["status"]) {
   return ({
     planned: "尚未排队",
     queued: "等待开始",
-    running: "正在执行",
+    running: "执行中",
     succeeded: "已完成",
     failed: "执行失败",
   }[value]);
@@ -84,30 +84,30 @@ function runStatusLabel(value: Project["runs"][number]["status"]) {
 
 function progressEventLabel(value: string) {
   return ({
-    campaign_started: "实验批次开始",
-    batch_completed: "本次批次完成",
-    run_queued: "Run 已排队",
-    run_started: "Run 开始",
-    run_finished: "Run 完成",
-    round_guidance_required: "等待 Round 指导",
-    round_ready: "Round 可分析",
-    round_completed: "Round 汇总完成",
-    campaign_completed: "实验批次完成",
-    results_locked: "结果锁定",
+    campaign_started: "实验开始",
+    batch_completed: "本批完成",
+    run_queued: "运行已排队",
+    run_started: "运行开始",
+    run_finished: "运行结束",
+    round_guidance_required: "等待你的建议",
+    round_ready: "本轮结果待分析",
+    round_completed: "本轮汇总完成",
+    campaign_completed: "全部完成",
+    results_locked: "结果已确认",
     statistics_completed: "统计分析完成",
-    innovation_review_completed: "创新审查完成",
-    hypothesis_revision_ready: "修订假设待排名",
-    report_ready: "研究报告就绪",
+    innovation_review_completed: "创新评估完成",
+    hypothesis_revision_ready: "修订假设待筛选",
+    report_ready: "研究报告已生成",
     finalization_failed: "结果收尾失败",
-    campaign_failed: "实验批次失败",
-    stream_completed: "流式输出结束",
+    campaign_failed: "实验失败",
+    stream_completed: "推送结束",
   }[value] ?? value);
 }
 
 function strategyLabel(value: string) {
   return ({
-    random: "随机抽取支持样本",
-    k_center: "分散覆盖抽取支持样本",
+    random: "随机选样",
+    k_center: "分散覆盖选样",
   }[value] ?? value.replaceAll("_", " "));
 }
 
@@ -210,19 +210,33 @@ export function ExperimentCampaignPanel({
   onFinalize,
 }: Props) {
   const defaultRoundGuidance =
-    "请结合第 1 次迭代结果，优先检验最可能证伪该创新点的类别与 K 值，并保持预注册比较公平。";
+    "请结合第 1 轮结果，重点验证最可能推翻本假设的类别和 K 值，并保持比较公平。";
   const [roundGuidance, setRoundGuidance] = useState(
     defaultRoundGuidance,
   );
   const [roundGuidanceById, setRoundGuidanceById] = useState<Record<string, string>>({});
   const [aiGenerateStrategy, setAiGenerateStrategy] = useState(false);
   const [aiGenerateDetector, setAiGenerateDetector] = useState(false);
+  // 收起后只显示摘要面板，把"每次运行的明细"折叠起来，避免单卡过长。
+  const [expandedRoundIds, setExpandedRoundIds] = useState<Record<string, boolean>>({});
+  function toggleRoundExpansion(roundId: string) {
+    setExpandedRoundIds((current) => ({ ...current, [roundId]: !current[roundId] }));
+  }
   const audit = project.dataset_audits.at(-1) ?? null;
   const liveCampaign = project.experiment_campaign;
   // Keep the latest completed campaign visible after result finalisation.  The
   // backend archives it before innovation review so no round evidence vanishes
   // from the read-only competition/report view.
   const campaign = liveCampaign ?? project.experiment_campaign_history.at(-1) ?? null;
+  const campaignDisplay = campaign
+    ? ({
+      active: "执行中",
+      awaiting_guidance: "等待你的建议",
+      awaiting_feedback: "等待汇总",
+      completed: "已完成",
+      failed: "失败",
+    }[campaign.status] ?? campaign.status.replaceAll("_", " "))
+    : "准备中";
   const plannedHypothesisId = project.experiment_plan?.hypothesis_ids.at(0) ?? null;
   const campaignHypothesis = campaign
     ? project.hypotheses.find((hypothesis) => hypothesis.id === campaign.hypothesis_id) ?? null
@@ -316,18 +330,18 @@ export function ExperimentCampaignPanel({
   }
 
   return (
-    <section className="campaign-panel" aria-label="自适应实验闭环">
+    <section className="campaign-panel" aria-label="实验闭环">
       <div className="campaign-heading">
         <div>
-          <p className="eyebrow">Direction B · closed-loop experimentation</p>
-          <h3>科学实验任务规划与反馈迭代</h3>
+          <p className="eyebrow">实验闭环</p>
+          <h3>实验任务与结果反馈</h3>
           <p>
-            真实 MVTec 数据 → DINOv2 支持集表征 → AnomalyDINO 本机运行 → 成对统计 →
-            每个创新点一个 Round：首轮完成后等待一次指导，再自动完成后两次迭代。运行状态通过流式事件实时展示并写入 Research Ledger。
+            从准备数据、运行实验到汇总结果，所有步骤都在这里完成。每个假设会自动跑三轮：
+            第一轮结束后请你给一次意见，系统会根据你的意见完成后两轮。
           </p>
         </div>
         <span className={`campaign-state ${campaign?.status ?? "setup"}`}>
-          {campaign ? campaign.status.replace("_", " ") : "SETUP"}
+          {campaignDisplay}
         </span>
       </div>
 
@@ -335,7 +349,7 @@ export function ExperimentCampaignPanel({
         <section className="campaign-hypothesis" aria-label="当前实验假设">
           <div className="campaign-hypothesis-heading">
             <div>
-              <p className="eyebrow">{campaign ? "本实验正在验证的假设" : "当前候选研究假设"}</p>
+              <p className="eyebrow">{campaign ? "正在验证的假设" : "当前候选假设"}</p>
               <h4>{campaignHypothesis.title}</h4>
             </div>
             <span>{campaign ? "已关联到本轮实验" : "等待生成实验方案"}</span>
@@ -344,9 +358,9 @@ export function ExperimentCampaignPanel({
           <p className="hypothesis-rationale"><b>为什么验证：</b>{campaignHypothesis.rationale}</p>
           {campaign && (
             <dl className="hypothesis-contract">
-              <div><dt>比较方法</dt><dd>{strategyLabel(campaign.treatment)} vs {strategyLabel(campaign.control)}</dd></div>
-              <div><dt>主指标</dt><dd>{metricLabel(campaign.metric)}</dd></div>
-              <div><dt>判断方式</dt><dd>同类别、同 K、同随机种子成对比较</dd></div>
+              <div><dt>比较方式</dt><dd>{strategyLabel(campaign.treatment)} vs {strategyLabel(campaign.control)}</dd></div>
+              <div><dt>主要指标</dt><dd>{metricLabel(campaign.metric)}</dd></div>
+              <div><dt>比较规则</dt><dd>相同类别、K 值和随机种子下成对比较</dd></div>
             </dl>
           )}
           <div className="hypothesis-prediction">
@@ -367,29 +381,29 @@ export function ExperimentCampaignPanel({
         </section>
       ) : (
         <div className="campaign-hypothesis missing">
-          当前实验还没有关联到已生成的研究假设，因此下面只能展示执行计划，暂时不能解释实验要验证的科学主张。
+          当前实验还未关联到具体假设，下面只能展示执行计划，无法解释要验证的科学问题。
         </div>
       )}
 
-      <div className="loop-rail" aria-label="实验闭环步骤">
+      <div className="loop-rail" aria-label="实验步骤">
         <div className={audit?.verified ? "done" : "active"}>
-          <span>1</span><b>数据审计</b><small>只读取 train/good 选支持集</small>
+          <span>1</span><b>数据准备</b><small>只读取正常训练图作为支持集</small>
         </div>
         <div className={campaign ? "done" : audit?.verified ? "active" : ""}>
-          <span>2</span><b>任务规划</b><small>渐进式实验树 + 预算约束</small>
+          <span>2</span><b>方案设计</b><small>在预算内挑选要做的实验</small>
         </div>
         <div className={campaign?.status === "active" ? "active" : terminalRuns ? "done" : ""}>
-          <span>3</span><b>真实执行</b><small>本机 GPU 隔离运行</small>
+          <span>3</span><b>运行实验</b><small>本机 GPU 隔离运行</small>
         </div>
         <div className={campaign?.status === "awaiting_feedback" ? "active" : hasCompletedRound || campaign?.status === "completed" ? "done" : ""}>
-          <span>4</span><b>反馈迭代</b><small>结果改变下一轮计划</small>
+          <span>4</span><b>结果反馈</b><small>本轮结果影响下一轮选择</small>
         </div>
       </div>
 
       <div className="validation-portfolio">
         <div className="section-title">
-          <h4>创新点实验验证队列</h4>
-          <span>每个创新点一个 Round · 三次自动迭代 · 独立统计</span>
+          <h4>假设实验队列</h4>
+          <span>每个假设独立一轮 · 三次自动迭代 · 各自统计</span>
         </div>
         <div className="validation-track-grid">
           {project.hypotheses.map((hypothesis, index) => {
@@ -425,18 +439,18 @@ export function ExperimentCampaignPanel({
               && (!campaign || campaign.status === "completed"),
             );
             const state = isCompleted
-              ? "已完成实验"
+              ? "已完成"
               : isCurrent
                 ? "正在验证"
                 : !hasRunnableStrategies
-                  ? "需要先实现方法"
+                  ? "需要先准备好方法"
                   : isApproved
-                    ? "已预注册，等待实验"
-                    : "候选，尚未批准";
+                    ? "已安排，等待开始"
+                    : "候选，尚未确认";
             return (
               <article className={`validation-track ${isCurrent ? "current" : ""}`} key={hypothesis.id}>
                 <div className="validation-track-head">
-                  <b>创新点 H{index + 1}</b>
+                  <b>假设 H{index + 1}</b>
                   <span>{state}</span>
                 </div>
                 <h5>{hypothesis.title}</h5>
@@ -444,25 +458,25 @@ export function ExperimentCampaignPanel({
                 <div className="contract-line">
                   {hypothesis.analysis_contract
                     ? `${hypothesis.analysis_contract.treatment} vs ${hypothesis.analysis_contract.control} · ${hypothesis.analysis_contract.metric}`
-                    : "尚无实验契约"}
+                    : "尚无实验方案"}
                 </div>
                 <details>
-                  <summary>查看该创新点的实验指导</summary>
+                  <summary>查看本假设的实验思路</summary>
                   <ol>
                     {hypothesis.experiment_guidance.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}
                   </ol>
                 </details>
                 {isCompleted && (
                   <div className="track-result">
-                    <b>独立实验结果</b>
+                    <b>本假设结果</b>
                     <span>有效配对 {trackPairs ?? "—"}</span>
                     <span>主效应 Δ {trackEffect?.toFixed(4) ?? "—"}</span>
-                    <small>完整指标和失败记录保留在该创新点对应的实验轮次中。</small>
+                    <small>详细指标和失败记录可在下方对应的实验轮次中查看。</small>
                   </div>
                 )}
                 {canStart && hypothesis.id === firstRunnableHypothesisId && (
                   <button disabled={busy} onClick={onInitialize}>
-                    启动所选创新点的闭环实验
+                    开始本假设的实验
                   </button>
                 )}
               </article>
@@ -474,28 +488,28 @@ export function ExperimentCampaignPanel({
       {!audit ? (
         <div className="campaign-setup">
           <div>
-            <h4>第一步：登记并审计本地数据</h4>
-            <p>系统校验 15 类目录、训练正常样本、测试缺陷和像素掩码对应关系，并冻结 SHA-256 清单。</p>
+            <h4>第一步：登记并准备本地数据</h4>
+            <p>系统会校验目录结构、训练正常样本、测试缺陷图与像素级掩码的对应关系，并生成数据快照。</p>
           </div>
-          <label htmlFor="dataset-root">MVTec AD 根目录</label>
+          <label htmlFor="dataset-root">数据集根目录</label>
           <div className="path-action">
             <input
               id="dataset-root"
               value={datasetPath}
               onChange={(event) => setDatasetPath(event.target.value)}
               disabled={busy}
-              placeholder="请输入 MVTec AD 数据集的绝对路径，例如 F:\mvtec_anomaly_detection"
+              placeholder="请输入数据集的绝对路径，例如 F:\mvtec_anomaly_detection"
             />
             <button disabled={busy || datasetPath.trim().length < 3} onClick={onAudit}>
-              {busy ? "正在审计…" : "审计并冻结数据"}
+              {busy ? "正在准备数据…" : "准备数据"}
             </button>
           </div>
         </div>
       ) : !campaign ? (
         <div className="campaign-setup verified-dataset">
           <div>
-            <p className="eyebrow">Dataset verified</p>
-            <h4>{audit.dataset} 已通过审计</h4>
+            <p className="eyebrow">数据已就绪</p>
+            <h4>{audit.dataset} 已通过校验</h4>
             <p>{audit.root}</p>
           </div>
           <div className="audit-stats">
@@ -521,20 +535,20 @@ export function ExperimentCampaignPanel({
             >
               {busy
                 ? aiGenerateStrategy || aiGenerateDetector
-                  ? "正在处理实验方法并生成预注册…"
-                  : "正在生成预注册…"
+                  ? "AI 正在生成方法并设计实验…"
+                  : "正在设计实验方案…"
                 : aiGenerateStrategy || aiGenerateDetector
-                  ? "按「AI 生成替代」设置生成预注册实验"
-                  : "基于当前假设与数据生成预注册实验"}
+                  ? "生成实验方案（含 AI 编写的方法）"
+                  : "生成实验方案"}
             </button>
           )}
           {project.stage === "awaiting_experiment_approval" && (
             <button disabled={busy || !audit.verified} onClick={onInitialize}>
-              {busy ? "正在自动预注册并启动…" : "自动预注册并并行执行已选创新点"}
+              {busy ? "正在启动实验…" : "确认并开始执行"}
             </button>
           )}
           <small>
-            数据审计完成后，系统会按用户优先级为每个已选创新点建立一个 Round；所有 Round 并行执行，内部自动迭代三次。
+            数据准备好后，系统会为每个确认过的假设安排一轮实验；每轮自动跑三次，结果实时显示。
           </small>
         </div>
       ) : (
@@ -542,27 +556,27 @@ export function ExperimentCampaignPanel({
           <div className="campaign-metrics">
               <article><span>当前轮次</span><strong>{campaign.current_round}/{campaign.max_rounds}</strong><small>{campaign.execution_mode === "parallel" ? `并行度 ${campaign.parallelism}` : "串行"}</small></article>
             <article><span>运行进度</span><strong>已结束 {terminalRuns}/{selectedRuns}</strong><small>成功 {successfulRuns} · 失败 {failedCampaignRuns} · 待执行 {Math.max(selectedRuns - terminalRuns, 0)} · 已核验 {verifiedRuns}</small></article>
-            <article><span>累计有效配对</span><strong>{cumulativePairCount}/{minimumPairs}</strong><small>Image Δ {cumulativeEffect?.toFixed(4) ?? "—"}</small></article>
-            <article><span>避免穷举</span><strong>{avoidedRuns}</strong><small>共 {campaign.exhaustive_run_count} 个候选 run</small></article>
-            <article><span>执行环境</span><strong>{campaign.device}</strong><small>{campaign.detector}</small></article>
+            <article><span>累计有效配对</span><strong>{cumulativePairCount}/{minimumPairs}</strong><small>主指标 Δ {cumulativeEffect?.toFixed(4) ?? "—"}</small></article>
+            <article><span>避免穷举</span><strong>{avoidedRuns}</strong><small>共 {campaign.exhaustive_run_count} 个候选运行</small></article>
+            <article><span>运行环境</span><strong>{campaign.device}</strong><small>{campaign.detector}</small></article>
           </div>
 
           <div className="campaign-actions">
             <div>
-              <b>系统下一动作</b>
+              <b>系统下一步</b>
               <span>{campaign.next_action}</span>
               <small>
                 {campaign.status === "active"
                   ? campaign.execution_mode === "parallel"
-                    ? "系统正在并行完成所有已选创新点的三次预注册迭代；首次运行会生成并缓存 DINOv2 正常样本表征。"
-                    : "系统正在自动完成当前 Round 的三次迭代；首次运行会生成并缓存 DINOv2 正常样本表征。"
+                    ? "系统正在并行完成所有已选假设的三轮实验；首次运行会准备并缓存支持样本的特征。"
+                    : "系统正在自动完成当前轮的三次迭代；首次运行会准备并缓存支持样本的特征。"
                   : campaign.status === "awaiting_guidance"
-                    ? "第 1 次迭代已完成，请提交本 Round 唯一指导，系统将自动完成第 2、3 次迭代。"
+                    ? "第 1 轮已完成，请提交一次指导，系统将自动完成第 2、3 轮。"
                   : campaign.status === "awaiting_feedback"
                     ? campaign.execution_mode === "parallel"
-                      ? "所有已结束 Round 将并行交给 AI Scientist 汇总，并进入统一统计分析。"
-                      : "本 Round 三次迭代已结束，系统将汇总当前创新点并进入下一个创新点。"
-                    : `实验已按确定性边界停止（${campaign.termination_reason ?? "stopping condition"}），可以锁定结果进入正式统计。`}
+                      ? "所有已结束的轮将并行汇总，然后进入统一统计分析。"
+                      : "本轮三次迭代已结束，系统将汇总结果并进入下一个假设。"
+                    : `实验已按设定条件停止（${campaign.termination_reason ?? "已停止"}），可以进入统计分析。`}
             </small>
             </div>
             {campaign.status === "active" && (
@@ -571,18 +585,13 @@ export function ExperimentCampaignPanel({
                 onClick={() => void (campaign.execution_mode === "parallel" ? onExecuteParallel() : onAdvanceRound())}
               >
                 {busy
-                  ? "实验流执行中…"
+                  ? "实验执行中…"
                   : campaign.execution_mode === "parallel"
-                    ? "继续流式并行执行"
-                    : "继续自动执行当前 Round"}
+                    ? "继续并行执行"
+                    : "继续执行当前轮"}
               </button>
             )}
             {campaign.status === "awaiting_feedback" && (
-              // 等待汇总时一律走 round review（后端会按执行模式路由：并行 → 全量
-              // 汇总并关闭 campaign，串行 → 汇总当前 Round 并进入下一个创新点）。
-              // 不能绑定 onExecuteParallel：执行流端点只接受 active campaign，
-              // 而 driveExperimentLoop 对 parallel+awaiting_feedback 会直接返回，
-              // 导致按钮点击后什么都不发生，界面永远卡在等待汇总。
               <button
                 disabled={busy}
                 onClick={() => void onReviewRound()}
@@ -590,20 +599,18 @@ export function ExperimentCampaignPanel({
                 {busy
                   ? "AI 正在汇总…"
                   : campaign.execution_mode === "parallel"
-                    ? "汇总并行 Round 结果"
-                    : "汇总本 Round 并进入下一创新点"}
+                    ? "汇总所有轮的结果"
+                    : "汇总本轮并进入下一假设"}
               </button>
             )}
             {campaign.status === "completed" && project.stage === "experiments_queued" && (
-              // 没有成功且核验的 run 时后端 finalize 会拒绝（不会把失败当结果分析），
-              // 此时提供"重新执行"入口重建实验队列；有核验结果才允许锁定进统计。
               verifiedRuns > 0 ? (
                 <button disabled={busy} onClick={onFinalize}>
-                  {busy ? "正在锁定…" : "锁定结果并进入统计分析"}
+                  {busy ? "正在确认…" : "确认结果，进入统计分析"}
                 </button>
               ) : (
                 <button disabled={busy} onClick={onInitialize}>
-                  {busy ? "正在重新建立实验队列…" : "重新执行失败实验"}
+                  {busy ? "正在重新准备…" : "重新执行失败的实验"}
                 </button>
               )
             )}
@@ -612,7 +619,7 @@ export function ExperimentCampaignPanel({
           {streamEvents.length > 0 && (
             <div className="stream-console" aria-live="polite">
               <div className="stream-console-head">
-                <b>实验流实时进度</b>
+                <b>实时进度</b>
                 <span>
                   {latestStreamEvent ? progressEventLabel(latestStreamEvent.event_type) : "等待事件"}
                   {latestProgressEvent?.progress !== null
@@ -644,14 +651,14 @@ export function ExperimentCampaignPanel({
           {campaign.status === "awaiting_guidance" && campaign.execution_mode !== "parallel" && (
             <div className="human-guidance-box execution-guidance">
               <div className="guidance-copy">
-                <p className="eyebrow">Human-in-the-loop · once per Round</p>
-                <h4>请对本 Round 的后两次自动迭代提供一次指导</h4>
+                <p className="eyebrow">本轮需要你给一次建议</p>
+                <h4>请为本轮的后两次实验提供建议</h4>
                 <p>
-                  第 1 次迭代已经完成。你的建议只影响本 Round 的第 2、3 次迭代选择；
-                  三次迭代始终绑定同一个创新点，不能修改预注册方法、指标或数据边界。
+                  第 1 轮已完成。你的建议只会影响本轮剩余的两次实验；
+                  不会改变已经确定的方法、指标或数据。
                 </p>
               </div>
-              <label htmlFor="round-guidance">本 Round 中途指导</label>
+              <label htmlFor="round-guidance">本轮建议</label>
               <textarea
                 id="round-guidance"
                 value={roundGuidance}
@@ -659,46 +666,46 @@ export function ExperimentCampaignPanel({
                 rows={3}
                 maxLength={3000}
                 disabled={busy}
-                placeholder="例如：优先选择最能检验该假设边界的类别，并增加 K=4 的敏感性比较。"
+                placeholder="例如：重点验证最能推翻本假设的类别，并增加 K=4 的对比。"
               />
-              <div className="guidance-presets" aria-label="实验指导快捷建议">
+              <div className="guidance-presets" aria-label="实验建议快捷选项">
                 <button
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setRoundGuidance("优先执行最可能证伪当前创新点的任务，并说明选择依据。")}
+                  onClick={() => setRoundGuidance("优先执行最可能推翻当前假设的任务，并说明选择依据。")}
                 >
-                  信息增益优先
+                  信息量优先
                 </button>
                 <button
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setRoundGuidance("优先扩大类别覆盖，同时保持 random 与 k-center 成对比较。")}
+                  onClick={() => setRoundGuidance("扩大类别覆盖，同时保持随机与分散覆盖两种选样的成对比较。")}
                 >
-                  优先补齐配对
+                  补齐配对
                 </button>
                 <button
                   type="button"
                   className="guidance-chip"
                   disabled={busy}
-                  onClick={() => setRoundGuidance("按 AI Scientist 的信息增益建议继续三次迭代。")}
+                  onClick={() => setRoundGuidance("按 AI 建议继续剩下两轮。")}
                 >
-                  按系统建议
+                  采用 AI 建议
                 </button>
               </div>
               <div className="guidance-submit">
-                <small>{roundGuidance.trim().length}/3000 · 原文、AI 解释和后续 Run ID 将写入 Research Ledger</small>
+                <small>{roundGuidance.trim().length}/3000 · 你的建议与后续实验记录会一并保存</small>
                 <button
                   disabled={busy || roundGuidance.trim().length < 2}
                   onClick={() => void continueWithGuidance()}
                 >
-                  {busy ? "采纳指导并自动完成第 2、3 次迭代…" : "提交指导并继续本 Round"}
+                  {busy ? "正在按建议继续…" : "提交建议并继续本轮"}
                 </button>
               </div>
               {latestRoundGuidance && (
                 <div className={`guidance-decision ${latestRoundGuidance.disposition}`}>
-                  <b>本 Round 指导已记录：{latestRoundGuidance.disposition.replace("_", " ")}</b>
+                  <b>本轮建议已记录：{latestRoundGuidance.disposition.replace("_", " ")}</b>
                   <span>{latestRoundGuidance.interpretation}</span>
                   <small>{latestRoundGuidance.rationale}</small>
                 </div>
@@ -748,14 +755,31 @@ export function ExperimentCampaignPanel({
                 : Math.round(positiveFraction * measuredPairCount);
               const remainingRuns = Math.max(plannedRuns - terminalRuns, 0);
               const runGroups = groupRoundRuns(roundRuns);
+              const isExpanded = Boolean(expandedRoundIds[round.id]);
+              const comparableGroups = runGroups.filter((runs) => {
+                const treatmentRun = runs.find((run) => run.selection_strategy === roundTreatment);
+                const controlRun = runs.find((run) => run.selection_strategy === roundControl);
+                return treatmentRun?.metrics[roundMetric] !== undefined
+                  && controlRun?.metrics[roundMetric] !== undefined;
+              }).length;
               return (
-                <article className={`round-card ${round.status}`} key={round.id}>
-                  <div className="round-head">
-                    <span>ROUND {round.index}</span>
-                    <b>{phaseLabel(round.phase)}</b>
-                    <em>{roundStatusLabel(round.status)}</em>
-                  </div>
-                  <p className="eyebrow">绑定创新点：{roundHypothesis?.title ?? round.hypothesis_id}</p>
+                <article className={`round-card ${round.status} ${isExpanded ? "is-expanded" : "is-collapsed"}`} key={round.id}>
+                  <header className="round-card-top">
+                    <div className="round-head">
+                      <span>第 {round.index} 轮</span>
+                      <b>{phaseLabel(round.phase)}</b>
+                      <em>{roundStatusLabel(round.status)}</em>
+                    </div>
+                    <button
+                      type="button"
+                      className="round-toggle"
+                      aria-expanded={isExpanded}
+                      onClick={() => toggleRoundExpansion(round.id)}
+                    >
+                      {isExpanded ? "收起明细" : `查看 ${runGroups.length} 组运行明细`}
+                    </button>
+                  </header>
+                  <p className="eyebrow">本轮验证的假设：{roundHypothesis?.title ?? round.hypothesis_id}</p>
                   <h4>{round.objective}</h4>
                   <p className="round-rationale">{round.rationale}</p>
 
@@ -772,9 +796,17 @@ export function ExperimentCampaignPanel({
                     <div><dt>失败</dt><dd>{failedRuns}</dd></div>
                   </dl>
 
+                  <div className="round-summary-strip">
+                    <span><b>{comparableGroups}</b>组可比较</span>
+                    <span><b>{verifiedRuns}</b>项已核验</span>
+                    <span><b>{failedRuns}</b>项失败</span>
+                    <span><b>{runGroups.length}</b>组运行条件</span>
+                  </div>
+
+                  {isExpanded && (
                   <div className="round-section round-runs">
-                    <b>本轮逐项执行情况</b>
-                    <p>每一组使用同一类别、相同 K 和相同随机种子，只改变支持样本的选择方式，保证比较公平。</p>
+                    <b>本轮每次运行的明细</b>
+                    <p>每一组使用相同类别、K 值和随机种子，只改变支持样本的挑选方式，保证比较公平。</p>
                     <div className="run-groups">
                       {runGroups.map((runs) => {
                         const [referenceRun] = runs;
@@ -806,11 +838,11 @@ export function ExperimentCampaignPanel({
                                       <span className="run-side-label">{index === 0 ? "左侧" : "右侧"}</span>
                                       <b>{strategyRoleLabel(run.selection_strategy, roundTreatment, roundControl)}</b>
                                     </div>
-                                      <em>迭代 {run.iteration ?? "—"} · {runStatusLabel(run.status)}</em>
+                                      <em>第 {run.iteration ?? "—"} 次 · {runStatusLabel(run.status)}</em>
                                     </div>
                                     <small className="run-strategy-description">{strategyLabel(run.selection_strategy)}</small>
                                     <p>
-                                      从 {run.dataset} 的 {run.category} 正常训练图像中选取 {run.shots} 张支持样本，
+                                      从 {run.dataset} 的 {run.category} 正常训练图中选 {run.shots} 张支持样本，
                                       使用 {run.detector} 评估该类别测试集。
                                     </p>
                                     {run.status === "succeeded" && (
@@ -819,11 +851,11 @@ export function ExperimentCampaignPanel({
                                           <dl className="run-measurements">
                                             {keyMetrics.map((item) => <div key={item.key}><dt>{metricLabel(item.key)}</dt><dd>{item.value}</dd></div>)}
                                           </dl>
-                                        ) : <small>运行结束，但尚未解析出可展示的指标。</small>}
+                                        ) : <small>运行已结束，尚未解析出可展示的指标。</small>}
                                         <small>{run.verified ? "结果已通过完整性核验。" : "结果已产生，正在等待完整性核验，暂不作为正式证据。"}{formatDuration(run.duration_seconds) && ` 耗时 ${formatDuration(run.duration_seconds)}。`}</small>
                                       </>
                                     )}
-                                    {run.status === "running" && <small>任务已经启动。后端尚未记录细分子步骤或百分比，完成后会在这里显示实际指标。</small>}
+                                    {run.status === "running" && <small>任务已经启动，尚未返回具体指标，完成后会在这里显示。</small>}
                                     {(run.status === "planned" || run.status === "queued") && <small>尚未开始；会在前序任务释放执行资源后按本轮计划运行。</small>}
                                     {run.status === "failed" && <small className="run-error">未得到结果：{runErrorMessage(run.error)}</small>}
                                   </section>
@@ -833,28 +865,29 @@ export function ExperimentCampaignPanel({
                             <div className={`pair-state ${comparable ? "available" : "waiting"}`}>
                               {comparable ? (
                                 <p>
-                                  这一对的原始比较：{roundTreatment} 的 {metricLabel(roundMetric)}
+                                  这一对的对比：{roundTreatment} 的 {metricLabel(roundMetric)}
                                   为 {formatScore(treatmentRun?.metrics[roundMetric])}，{roundControl} 为 {formatScore(controlRun?.metrics[roundMetric])}，
-                                  差值 {formatSigned(difference)}。{verifiedPair ? "该对已进入正式证据统计。" : "两项结果仍待核验，暂不作为正式结论。"}
+                                  差值 {formatSigned(difference)}。{verifiedPair ? "该对已纳入正式统计。" : "两项结果仍待核验，暂不作为结论。"}
                                 </p>
-                              ) : <p>这组比较尚未完成：只有两种策略都取得并核验结果后，才能判断支持集选择是否带来差异。</p>}
+                              ) : <p>这组比较尚未完成：需要两种选样方式都拿到并核验结果，才能判断哪种支持样本更好。</p>}
                             </div>
                           </div>
                         );
                       })}
                     </div>
                   </div>
+                  )}
 
                   {hasMeasuredEffect ? (
                     <div className="round-section round-result">
-                      <b>本轮结果</b>
+                      <b>本轮结论</b>
                       <p>
                         {roundTreatment} 的 {roundMetric} 平均为 {formatMetric(treatmentMean)}，
                         {roundControl} 为 {formatMetric(controlMean)}，差值为
                         <strong className={meanDifference > 0 ? "positive" : meanDifference < 0 ? "negative" : "neutral"}>{formatSigned(meanDifference)}</strong>。
                       </p>
                       <small>
-                        本轮新增 {newPairCount} 个有效成对比较
+                        本轮新增 {newPairCount} 个有效配对
                         {positivePairs !== null && `，其中 ${positivePairs}/${measuredPairCount} 个 ${roundTreatment} 表现更好`}
                         {categorySummary && `。类别表现：${categorySummary}`}。
                       </small>
@@ -864,8 +897,8 @@ export function ExperimentCampaignPanel({
                       <b>{round.status === "running" ? "正在获得结果" : "尚未形成有效结果"}</b>
                       <p>
                         {round.status === "running"
-                          ? `已结束 ${terminalRuns}/${plannedRuns} 次运行，剩余 ${remainingRuns} 次。各项运行做了什么、已经获得哪些原始指标，见上方“本轮逐项执行情况”。`
-                          : "本轮尚未形成完整的成对比较，因此暂时无法判断哪种方法更好。"}
+                          ? `已结束 ${terminalRuns}/${plannedRuns} 次运行，剩余 ${remainingRuns} 次。每次运行的明细见上方。`
+                          : "本轮尚未形成完整的对比，因此暂时无法判断哪种方法更好。"}
                       </p>
                     </div>
                   )}
@@ -873,24 +906,24 @@ export function ExperimentCampaignPanel({
                   <div className={`round-section round-evidence ${evidenceReady ? "ready" : "pending"}`}>
                     <b>{evidenceReady ? "具备初步判断条件" : "证据仍不足"}</b>
                     <p>
-                      截至本轮累计形成 {cumulativePairs}/{minimumPairCount} 个有效成对比较。
+                      截至本轮累计形成 {cumulativePairs}/{minimumPairCount} 个有效配对。
                       {evidenceReady
-                        ? "已达到预注册的最小证据门槛，但仍需结合后续统计分析确认。"
-                      : "尚未达到预注册的最小门槛，当前趋势不能作为最终结论。"}
+                        ? "已达到设定的最小证据门槛，但仍需结合后续统计分析确认。"
+                      : "尚未达到最小门槛，当前趋势不能作为最终结论。"}
                     </p>
                   </div>
 
                   {campaign.execution_mode === "parallel" && round.status === "awaiting_guidance" && (
                     <div className="human-guidance-box execution-guidance round-guidance-card">
                       <div className="guidance-copy">
-                        <p className="eyebrow">Human-in-the-loop · Round {round.index}</p>
-                        <h4>第 1 次迭代已完成，请指导本 Round 的后续实验</h4>
+                        <p className="eyebrow">第 {round.index} 轮 · 需要你给一次建议</p>
+                        <h4>第 1 轮已完成，请给本轮剩余实验提建议</h4>
                         <p>
-                          该创新点的首轮成对结果已经写入台账。提交一次建议后，系统会自动执行本 Round
-                          预注册的第 2、3 次迭代；其他创新点 Round 仍可独立等待各自指导。
+                          本假设的首轮结果已经汇总。提交一次建议后，系统会自动跑完本轮剩余的两次实验；
+                          其他假设可以独立等待各自的建议。
                         </p>
                       </div>
-                      <label htmlFor={`round-guidance-${round.id}`}>本 Round 指导意见</label>
+                      <label htmlFor={`round-guidance-${round.id}`}>本轮建议</label>
                       <textarea
                         id={`round-guidance-${round.id}`}
                         value={guidanceForRound(round.id)}
@@ -898,41 +931,41 @@ export function ExperimentCampaignPanel({
                         rows={3}
                         maxLength={3000}
                         disabled={busy}
-                        placeholder="例如：优先检验最可能证伪该创新点的类别，并保持 K 值和随机种子比较公平。"
+                        placeholder="例如：重点验证最能推翻本假设的类别，并保持 K 值和随机种子的公平比较。"
                       />
-                      <div className="guidance-presets" aria-label={`Round ${round.index} 实验指导快捷建议`}>
+                      <div className="guidance-presets" aria-label={`第 ${round.index} 轮建议快捷选项`}>
                         <button
                           type="button"
                           className="guidance-chip"
                           disabled={busy}
-                          onClick={() => setGuidanceForRound(round.id, "优先执行最可能证伪当前创新点的任务，并说明选择依据。")}
+                          onClick={() => setGuidanceForRound(round.id, "优先执行最可能推翻当前假设的任务，并说明选择依据。")}
                         >
-                          信息增益优先
+                          信息量优先
                         </button>
                         <button
                           type="button"
                           className="guidance-chip"
                           disabled={busy}
-                          onClick={() => setGuidanceForRound(round.id, "扩大类别覆盖，同时保持 random 与 k-center 成对比较。")}
+                          onClick={() => setGuidanceForRound(round.id, "扩大类别覆盖，同时保持两种选样方式的成对比较。")}
                         >
-                          优先补齐配对
+                          补齐配对
                         </button>
                         <button
                           type="button"
                           className="guidance-chip"
                           disabled={busy}
-                          onClick={() => setGuidanceForRound(round.id, "按 AI Scientist 的信息增益建议继续第 2、3 次迭代。")}
+                          onClick={() => setGuidanceForRound(round.id, "按 AI 建议继续本轮剩余的两次实验。")}
                         >
-                          按系统建议
+                          采用 AI 建议
                         </button>
                       </div>
                       <div className="guidance-submit">
-                        <small>{guidanceForRound(round.id).trim().length}/3000 · 指导与后续 Run ID 将写入 Research Ledger</small>
+                        <small>{guidanceForRound(round.id).trim().length}/3000 · 建议与后续实验记录会一并保存</small>
                         <button
                           disabled={busy || guidanceForRound(round.id).trim().length < 2}
                           onClick={() => void continueWithGuidance(round.id)}
                         >
-                          {busy ? "采纳指导并执行后续迭代…" : `提交指导并继续 Round ${round.index}`}
+                          {busy ? "正在执行…" : `提交建议并继续第 ${round.index} 轮`}
                         </button>
                       </div>
                     </div>
@@ -940,41 +973,45 @@ export function ExperimentCampaignPanel({
 
                   {round.feedback && (
                     <div className="round-section feedback-note">
-                      <b>{round.status === "completed" ? "系统决定" : "中途指导排期"}：{decisionLabel(round.feedback.decision)}</b>
+                      <b>{round.status === "completed" ? "系统决定" : "本轮安排"}：{decisionLabel(round.feedback.decision)}</b>
                       <p>{round.feedback.rationale}</p>
-                      {round.feedback.observed_patterns.length > 0 && <small>观察到：{round.feedback.observed_patterns.join("；")}</small>}
+                      {round.feedback.observed_patterns.length > 0 && <small>观察到的现象：{round.feedback.observed_patterns.join("；")}</small>}
                       <small>下一阶段：{phaseLabel(round.feedback.next_phase)} · 预期新增信息：{Math.round(round.feedback.expected_information_gain * 100)}%</small>
 
                       {round.feedback.reasoning_chain && round.feedback.reasoning_chain.length > 0 && (
-                        <div className="reasoning-chain">
-                          <h5>AI 决策推理过程</h5>
-                          <ol>
-                            {round.feedback.reasoning_chain.map((step, idx) => (
-                              <li key={idx}>
-                                <span className="step-num">{step.step}.</span>
-                                <div className="step-content">
-                                  <span className="observation">{step.observation}</span>
-                                  <span className="arrow">→</span>
-                                  <span className="conclusion">{step.conclusion}</span>
-                                  <span className={`confidence ${step.confidence}`}>{step.confidence}</span>
-                                </div>
-                              </li>
-                            ))}
-                          </ol>
-                        </div>
+                        <details className="feedback-detail">
+                          <summary>查看决策依据（{round.feedback.reasoning_chain.length} 条推理步骤）</summary>
+                          <div className="reasoning-chain">
+                            <ol>
+                              {round.feedback.reasoning_chain.map((step, idx) => (
+                                <li key={idx}>
+                                  <span className="step-num">{step.step}.</span>
+                                  <div className="step-content">
+                                    <span className="observation">{step.observation}</span>
+                                    <span className="arrow">→</span>
+                                    <span className="conclusion">{step.conclusion}</span>
+                                    <span className={`confidence ${step.confidence}`}>{step.confidence}</span>
+                                  </div>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        </details>
                       )}
 
                       {round.feedback.alternative_decisions && round.feedback.alternative_decisions.length > 0 && (
-                        <div className="alternative-decisions">
-                          <h5>考虑过但未选择的方案</h5>
-                          <ul>
-                            {round.feedback.alternative_decisions.map((alt, idx) => (
-                              <li key={idx}>
-                                <code>{alt.decision}</code>: {alt.rejected_reason}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                        <details className="feedback-detail">
+                          <summary>查看未采用的备选方案（{round.feedback.alternative_decisions.length} 个）</summary>
+                          <div className="alternative-decisions">
+                            <ul>
+                              {round.feedback.alternative_decisions.map((alt, idx) => (
+                                <li key={idx}>
+                                  <code>{alt.decision}</code>: {alt.rejected_reason}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </details>
                       )}
 
                       {round.feedback.expected_improvement && (
@@ -992,7 +1029,7 @@ export function ExperimentCampaignPanel({
                   {round.status === "ready_for_feedback" && !round.feedback && (
                     <div className="round-section feedback-note pending">
                       <b>等待系统分析</b>
-                      <p>本轮运行已结束。系统将根据真实成对结果决定扩大范围、重复验证、诊断异常结果或停止实验。</p>
+                      <p>本轮运行已结束。系统将根据真实结果决定下一步：扩大范围、重复验证、诊断异常或停止实验。</p>
                     </div>
                   )}
                 </article>
@@ -1007,9 +1044,9 @@ export function ExperimentCampaignPanel({
             <HypothesisEvolutionPanel project={project} />
           )}
 
-          <div className="node-table" role="table" aria-label="实验树节点">
+          <div className="node-table" role="table" aria-label="实验任务清单">
             <div className="node-row node-header" role="row">
-              <span>节点</span><span>实验问题</span><span>优先级</span><span>状态</span>
+              <span>编号</span><span>实验问题</span><span>优先级</span><span>状态</span>
             </div>
             {campaign.nodes.map((node) => (
               <div className="node-row" role="row" key={node.id}>

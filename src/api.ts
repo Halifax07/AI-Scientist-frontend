@@ -25,6 +25,53 @@ export const api = {
   listProjects: () => request<Project[]>("/api/v1/projects"),
   getProject: (projectId: string) => request<Project>(`/api/v1/projects/${projectId}`),
   createDemo: () => request<Project>("/api/v1/projects/demo", { method: "POST" }),
+  /**
+   * Create a custom research project from the user's domain and keywords.
+   *
+   * The platform is intentionally generic: ``domain`` describes the research
+   * area (e.g. "基于机器视觉的异常检测"), ``objective`` carries the concrete
+   * research question, and ``keywords`` are forwarded into the literature
+   * search so evidence retrieval is anchored on the user's inputs rather than
+   * a hard-coded FSAD/MVTec query list.
+   */
+  createCustomProject: async (input: {
+    title?: string;
+    domain: string;
+    objective: string;
+    applicationContext?: string;
+    keywords: string[];
+  }) => {
+    const domain = input.domain.trim() || "通用科研方向";
+    const objective = input.objective.trim();
+    const applicationContext = (
+      input.applicationContext?.trim() || "用户提供的研究场景和约束条件"
+    );
+    const keywords = input.keywords
+      .map((kw) => kw.trim())
+      .filter((kw) => kw.length > 0);
+    return request<Project>("/api/v1/projects", {
+      method: "POST",
+      body: JSON.stringify({
+        spec: {
+          title: input.title?.trim() || `${domain}自主研究`,
+          domain,
+          application_context: applicationContext,
+          objective,
+          datasets: [],
+          user_guidance: [
+            objective,
+            "本轮只进行文献检索、研究空白发现、创新候选和可证伪假设生成，不宣称实验验证。",
+            ...(keywords.length > 0 ? [`关键词：${keywords.join("、")}`] : []),
+          ],
+        },
+      }),
+    });
+  },
+  /**
+   * Legacy helper kept for compatibility with the old FSAD-focused UI.
+   * New callers should prefer ``createCustomProject`` with the user's own
+   * domain and keywords.
+   */
   createIdeation: async (prompt: string) => {
     const project = await request<Project>("/api/v1/projects", {
       method: "POST",

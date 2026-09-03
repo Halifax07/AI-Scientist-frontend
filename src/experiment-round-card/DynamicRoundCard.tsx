@@ -220,7 +220,7 @@ export function DynamicRoundCard({ project, campaign, round }: RoundCardProps) {
   return (
     <article className={`round-card dynamic-round-card ${round.status} round-density-${spec.density}`}>
       <header className="round-card-header dynamic-round-header">
-        <div><span className="round-index">ROUND {round.index}</span><b>{phaseLabel(round.phase)}</b><strong>{analysisLabel(mode)}</strong></div>
+        <div><span className="round-index">第 {round.index} 轮</span><b>{phaseLabel(round.phase)}</b><strong>{analysisLabel(mode)}</strong></div>
         <em>{statusLabel(round.status)}</em>
       </header>
       <div className="round-card-title">
