@@ -730,7 +730,7 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 .run-step-head b { color: #314d3d; font-size: 11px; }
 .run-step-head em { flex: none; color: #6a7b72; font-size: 10px; font-style: normal; }
 .run-strategy-label { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.run-side-label { padding: 2px 4px; border-radius: 4px; color: #176c4a; background: #dcefe4; font-size: 9px; font-weight: 700; }
+.run-side-label { padding: 3px 6px; border-radius: 4px; color: #176c4a; background: #dcefe4; font-size: 9px; font-weight: 700; line-height: 1.6; }
 .run-strategy-description { margin-top: 3px; color: #6d7c73; }
 .run-step.failed .run-step-head em, .run-error { color: #a04232; }
 .run-step > p { margin: 6px 0; color: #5b6c63; font-size: 11px; line-height: 1.5; }
@@ -748,7 +748,7 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 .round-pending > b { color: #806300; }
 .round-evidence.ready > b { color: #176c4a; }
 .round-evidence.pending > b { color: #8b6400; }
-.feedback-note { color: #43534b; background: #f4f6ed; }
+.feedback-note { color: #43534b; background: #f4f6ed; padding: 10px 12px; border-radius: 6px; }
 .feedback-note.pending { background: #faf6e9; }
 .feedback-note p { margin: 5px 0 0; line-height: 1.5; }
 .feedback-detail { margin-top: 8px; }
@@ -778,6 +778,21 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 .round-card .round-section > b { color: #294736; font-size: 12px; letter-spacing: .02em; }
 .round-card .round-section > p { margin-top: 6px; }
 .round-card .round-section > small { margin-top: 7px; }
+.round-card .round-section.feedback-note { padding: 12px 14px; border-radius: 6px; }
+.round-card .round-section.feedback-note > *:first-child { margin-top: 0; }
+.round-card .round-section.feedback-note .feedback-detail { margin-top: 9px; }
+.round-card .round-section.feedback-note .feedback-detail .reasoning-chain,
+.round-card .round-section.feedback-note .feedback-detail .alternative-decisions { padding: 9px 11px; }
+.round-card .round-section.feedback-note .expected-improvement { margin-left: 0; margin-right: 0; }
+/* 直排 round-card（内容直接挂在卡片下的结构）缺少内层 wrapper 的水平留白：
+   为直接子级补上与 .round-card-title 一致的 16px 左右内边距，避免文字贴住卡片边框。 */
+.round-card > .round-card-top { padding: 13px 16px 0; }
+.round-card > .eyebrow,
+.round-card > h4,
+.round-card > .round-rationale { padding-left: 16px; padding-right: 16px; }
+.round-card > .round-section { padding: 13px 16px 0; }
+.round-card > .round-section.feedback-note { margin: 14px 16px 0; padding: 12px 14px; }
+.round-card > .round-section.feedback-note > *:first-child { margin-top: 0; }
 .round-card .template-intro { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 10px; padding: 9px 10px; border: 1px solid #dce9e1; border-radius: 5px; color: #587066; background: #f7faf8; font-size: 10px; line-height: 1.45; }
 .round-card .template-intro b { flex: none; color: #1c6547; font-size: 11px; }
 .round-card .round-progress-section { border-top: 0 !important; }
@@ -952,9 +967,9 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 
 .reasoning-chain .step-num {
   display: inline-block;
-  width: 18px;
-  height: 18px;
-  line-height: 18px;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
   text-align: center;
   border-radius: 50%;
   background: #e2f1e9;
@@ -986,9 +1001,10 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 
 .reasoning-chain .confidence {
   font-size: 10px;
-  padding: 1px 6px;
+  padding: 3px 8px;
   border-radius: 999px;
   font-weight: 500;
+  line-height: 1.6;
   background: #edf3ef;
   color: #5c6d64;
 }
@@ -1039,9 +1055,10 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 
 .alternative-decisions code {
   background: #f4ecd4;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 3px 7px;
+  border-radius: 4px;
   font-size: 10px;
+  line-height: 1.3;
   color: #735800;
 }
 
@@ -1159,7 +1176,7 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 }
 
 .efficiency-chart .round-label {
-  margin-top: 6px;
+  margin: 6px 0 3px;
   font-size: 11px;
   color: #6b7280;
 }
@@ -1196,10 +1213,11 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 
 .efficiency-chart .confidence-badge {
   display: inline-block;
-  padding: 2px 7px;
+  padding: 3px 8px;
   border-radius: 10px;
   font-size: 10px;
   font-weight: 500;
+  line-height: 1.5;
 }
 
 .efficiency-chart .confidence-badge.high {
@@ -1388,9 +1406,10 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
 
 .evolution-node .hypothesis-meta code {
   background: #e5e7eb;
-  padding: 1px 4px;
+  padding: 2px 6px;
   border-radius: 3px;
   font-size: 10px;
+  line-height: 1.5;
 }
 
 .evolution-node .boundary-conditions {
