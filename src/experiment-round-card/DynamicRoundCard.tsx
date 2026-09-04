@@ -15,6 +15,17 @@ import { BlockRenderer } from "./BlockRenderer";
 import { findExperimentDesign } from "../experiment-design";
 import type { RoundCardProps } from "./types";
 
+export type DynamicPresentationSource = "round" | "design" | "safe_fallback" | "legacy";
+
+export interface DynamicPresentationResolution {
+  spec: ExperimentCardPresentationSpec | null;
+  source: DynamicPresentationSource;
+  design: ExperimentDesignSpec | null;
+  generationStatus: "ai_selected" | "fallback" | "needs_correction" | null;
+  fallbackReason: string | null;
+  errors: string[];
+}
+
 const BLOCK_KINDS: ExperimentCardBlockKind[] = [
   "narrative",
   "progress",
@@ -158,6 +169,87 @@ export function safeDynamicPresentationSpec(): ExperimentCardPresentationSpec {
   };
 }
 
+function generationDiagnostics(project: Project) {
+  const plan = project.experiment_plan;
+  return {
+    generationStatus: plan?.design_generation_status ?? null,
+    fallbackReason: plan?.design_generation_fallback_reason ?? null,
+    errors: plan?.design_generation_errors ?? [],
+  } satisfies Pick<DynamicPresentationResolution, "generationStatus" | "fallbackReason" | "errors">;
+}
+
+export function resolveDynamicPresentationSpec(
+  project: Project,
+  round: ExperimentRound,
+): DynamicPresentationResolution {
+  const runs = round.run_ids
+    .map((id) => project.runs.find((run) => run.id === id))
+    .filter((run): run is ExperimentRun => Boolean(run));
+  const design = findExperimentDesign(
+    project,
+    round.hypothesis_id,
+    round.design_id,
+    runs[0]?.plan_id,
+  );
+  const diagnostics = generationDiagnostics(project);
+
+  if (isValidDynamicPresentationSpec(round.presentation_spec)) {
+    return { spec: round.presentation_spec, source: "round", design, ...diagnostics };
+  }
+  if (isValidDynamicPresentationSpec(design?.presentation_spec)) {
+    return { spec: design.presentation_spec, source: "design", design, ...diagnostics };
+  }
+
+  // A round without any design metadata is still a supported legacy card. Only
+  // use the safe dynamic card when the payload indicates a dynamic design.
+  const dynamicRequested = Boolean(round.design_id) || Boolean(design) || round.presentation_spec != null;
+  return {
+    spec: dynamicRequested ? safeDynamicPresentationSpec() : null,
+    source: dynamicRequested ? "safe_fallback" : "legacy",
+    design,
+    ...diagnostics,
+  };
+}
+
+function generationStatusLabel(value: DynamicPresentationResolution["generationStatus"]) {
+  const labels: Record<string, string> = {
+    ai_selected: "AI 设计已选择",
+    fallback: "设计生成已降级",
+    needs_correction: "设计需要修正",
+  };
+  return labels[value ?? ""] ?? "未记录设计生成状态";
+}
+
+export function DynamicPresentationNotice({
+  resolution,
+}: {
+  resolution: DynamicPresentationResolution;
+}) {
+  const sourceLabel = ({
+    round: "本轮动态设计",
+    design: "实验设计中的动态卡",
+    safe_fallback: "安全数据型卡片（降级）",
+    legacy: "传统轮次卡",
+  }[resolution.source]);
+  const isFallback = resolution.source === "safe_fallback";
+  return (
+    <div className={`dynamic-presentation-notice ${isFallback ? "is-fallback" : ""}`}>
+      <div><b>卡片来源</b><span>{sourceLabel}</span></div>
+      <div><b>设计生成状态</b><span>{generationStatusLabel(resolution.generationStatus)}</span></div>
+      {resolution.fallbackReason && <p><b>降级原因</b>{resolution.fallbackReason}</p>}
+      {resolution.errors.length > 0 && (
+        <div className="dynamic-presentation-errors">
+          <b>设计生成错误</b>
+          <ul>{resolution.errors.map((error, index) => <li key={`${error}-${index}`}>{error}</li>)}</ul>
+        </div>
+      )}
+      {isFallback && !resolution.fallbackReason && resolution.errors.length === 0 && (
+        <p>未找到可用的动态设计规范，当前仅按真实运行数据展示安全结构。</p>
+      )}
+    </div>
+  );
+}
+
 function summaryForRound(round: ExperimentRound): ExperimentSummary | null {
   if (round.summary) return round.summary;
   const value = objectRecord(round.result_summary.summary);
@@ -195,7 +287,12 @@ function analysisLabel(value: string | undefined): string {
   }[value ?? ""] ?? "实验分析");
 }
 
-export function DynamicRoundCard({ project, campaign, round }: RoundCardProps) {
+export function DynamicRoundCard({
+  project,
+  campaign,
+  round,
+  presentationResolution,
+}: RoundCardProps & { presentationResolution?: DynamicPresentationResolution }) {
   const spec = round.presentation_spec as ExperimentCardPresentationSpec;
   const summary = summaryForRound(round);
   const runs = round.run_ids
@@ -228,6 +325,7 @@ export function DynamicRoundCard({ project, campaign, round }: RoundCardProps) {
         <h4>{design?.question ?? round.objective}</h4>
         <p className="round-rationale">{design?.rationale ?? round.rationale}</p>
       </div>
+      {presentationResolution && <DynamicPresentationNotice resolution={presentationResolution} />}
       <div className={`dynamic-round-layout dynamic-layout-${spec.layout}`}>
         {blocks.map((block, index) => (
           <section className={`dynamic-block dynamic-span-${block.span ?? "full"}`} key={block.id ?? `${block.kind}-${block.source}-${index}`}>

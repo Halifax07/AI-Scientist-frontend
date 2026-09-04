@@ -1619,3 +1619,40 @@ button.method-dialog-close:hover { border-color: #5e9e7e; color: #176c4a; }
   .dynamic-run-value { grid-column: 1 / -1; text-align: left; }
   .dynamic-run-trace dl { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* 轮次卡片 · 模板徽标（CampaignPanel 内嵌，设计卡 / 结构卡共用） */
+.round-head strong.round-template-chip {
+  padding: 3px 7px;
+  border: 1px solid #c9dfd2;
+  border-radius: 999px;
+  color: #176c4a;
+  background: #eef6f1;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.round-card > .round-design-blocks { margin-top: 2px; }
+.round-card > .round-design-blocks .dynamic-block:first-child { padding-top: 8px; border-top: 0; }
+
+.dynamic-presentation-notice {
+  display: grid;
+  gap: 5px;
+  margin: 0 16px;
+  padding: 9px 10px;
+  border: 1px solid #dce9e1;
+  border-left: 3px solid #3b8b63;
+  color: #596b61;
+  background: #f7faf8;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.dynamic-presentation-notice > div { display: flex; gap: 8px; min-width: 0; }
+.dynamic-presentation-notice b { flex: none; color: #315544; }
+.dynamic-presentation-notice span, .dynamic-presentation-notice p { overflow-wrap: anywhere; }
+.dynamic-presentation-notice p { margin: 0; }
+.dynamic-presentation-notice.is-fallback { border-color: #e8d9ae; border-left-color: #c59614; background: #fffaf0; }
+.dynamic-presentation-notice.is-fallback > div:first-child span { color: #8a6613; font-weight: 700; }
+.dynamic-presentation-errors { display: block !important; }
+.dynamic-presentation-errors ul { margin: 3px 0 0; padding-left: 18px; }
+.dynamic-presentation-errors li { overflow-wrap: anywhere; }

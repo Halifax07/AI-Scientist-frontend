@@ -2,7 +2,12 @@ import { useState } from "react";
 import { EfficiencyChart } from "./EfficiencyChart";
 import { HypothesisEvolutionPanel } from "./HypothesisEvolutionPanel";
 import { MethodSourcePanel } from "./MethodSourcePanel";
-import type { ExperimentProgressEvent, Project } from "./types";
+import type { ExperimentProgressEvent, ExperimentSummary, Project } from "./types";
+import { BlockRenderer } from "./experiment-round-card/BlockRenderer";
+import {
+  DynamicPresentationNotice,
+  resolveDynamicPresentationSpec,
+} from "./experiment-round-card/DynamicRoundCard";
 
 interface Props {
   project: Project;
@@ -126,6 +131,25 @@ function metricLabel(value: string) {
     pixel_auroc: "像素级定位",
     aupro: "区域定位",
   }[value] ?? value.replaceAll("_", " "));
+}
+
+function analysisChipLabel(mode: string | undefined | null) {
+  return ({
+    group_comparison: "多条件比较",
+    factor_effects: "因素效应",
+    ordered_trend: "趋势分析",
+    distribution_summary: "稳定性分析",
+  }[mode ?? ""] ?? "实验设计");
+}
+
+function shapeChipLabel(runs: Project["runs"], treatment: string, control: string) {
+  if (runs.some((run) => run.status === "failed")) return "执行诊断";
+  const strategies = new Set(runs.map((run) => run.selection_strategy));
+  const seeds = new Set(runs.map((run) => run.seed));
+  if (strategies.has(treatment) && strategies.has(control) && strategies.size === 2) return "成对对照";
+  if (strategies.size > 2) return "因素矩阵";
+  if (strategies.size === 1 && seeds.size > 1) return "重复性";
+  return "探索序列";
 }
 
 function hypothesisHasRunnableStrategies(
@@ -762,6 +786,14 @@ export function ExperimentCampaignPanel({
                 return treatmentRun?.metrics[roundMetric] !== undefined
                   && controlRun?.metrics[roundMetric] !== undefined;
               }).length;
+              const presentationResolution = resolveDynamicPresentationSpec(project, round);
+              const dynamicSpec = presentationResolution.spec;
+              const roundDesign = presentationResolution.design;
+              const roundSummary: ExperimentSummary | null = round.summary
+                ?? (recordFrom(round.result_summary.summary) as unknown as ExperimentSummary | null);
+              const roundTemplateChip = dynamicSpec
+                ? analysisChipLabel(roundDesign?.analysis.mode)
+                : shapeChipLabel(roundRuns, roundTreatment, roundControl);
               return (
                 <article className={`round-card ${round.status} ${isExpanded ? "is-expanded" : "is-collapsed"}`} key={round.id}>
                   <header className="round-card-top">
@@ -769,6 +801,7 @@ export function ExperimentCampaignPanel({
                       <span>第 {round.index} 轮</span>
                       <b>{phaseLabel(round.phase)}</b>
                       <em>{roundStatusLabel(round.status)}</em>
+                      <strong className="round-template-chip">{roundTemplateChip}</strong>
                     </div>
                     <button
                       type="button"
@@ -783,25 +816,41 @@ export function ExperimentCampaignPanel({
                   <h4>{round.objective}</h4>
                   <p className="round-rationale">{round.rationale}</p>
 
-                  <div className="round-section round-design">
-                    <b>本轮做什么</b>
-                    <p>{describeRoundScope(roundRuns, roundTreatment, roundControl)}</p>
-                  </div>
+                  {dynamicSpec ? (
+                    <>
+                    <DynamicPresentationNotice resolution={presentationResolution} />
+                    <div className={`dynamic-round-layout dynamic-layout-${dynamicSpec.layout} round-design-blocks`}>
+                      {dynamicSpec.blocks.slice(0, 16).map((block, blockIndex) => (
+                        <section className={`dynamic-block dynamic-span-${block.span ?? "full"}`} key={block.id ?? `${block.kind}-${block.source}-${blockIndex}`}>
+                          {block.title && <h5>{block.title}</h5>}
+                          <BlockRenderer block={block} project={project} campaign={campaign} round={round} design={roundDesign} summary={roundSummary} runs={roundRuns} />
+                        </section>
+                      ))}
+                    </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="round-section round-design">
+                        <b>本轮做什么</b>
+                        <p>{describeRoundScope(roundRuns, roundTreatment, roundControl)}</p>
+                      </div>
 
-                  <dl className="round-progress">
-                    <div><dt>内部迭代</dt><dd>{round.completed_iterations ?? 0}/3</dd></div>
-                    <div><dt>计划运行</dt><dd>{plannedRuns}</dd></div>
-                    <div><dt>已结束</dt><dd>{terminalRuns}/{plannedRuns}</dd></div>
-                    <div><dt>验证通过</dt><dd>{verifiedRuns}</dd></div>
-                    <div><dt>失败</dt><dd>{failedRuns}</dd></div>
-                  </dl>
+                      <dl className="round-progress">
+                        <div><dt>内部迭代</dt><dd>{round.completed_iterations ?? 0}/3</dd></div>
+                        <div><dt>计划运行</dt><dd>{plannedRuns}</dd></div>
+                        <div><dt>已结束</dt><dd>{terminalRuns}/{plannedRuns}</dd></div>
+                        <div><dt>验证通过</dt><dd>{verifiedRuns}</dd></div>
+                        <div><dt>失败</dt><dd>{failedRuns}</dd></div>
+                      </dl>
 
-                  <div className="round-summary-strip">
-                    <span><b>{comparableGroups}</b>组可比较</span>
-                    <span><b>{verifiedRuns}</b>项已核验</span>
-                    <span><b>{failedRuns}</b>项失败</span>
-                    <span><b>{runGroups.length}</b>组运行条件</span>
-                  </div>
+                      <div className="round-summary-strip">
+                        <span><b>{comparableGroups}</b>组可比较</span>
+                        <span><b>{verifiedRuns}</b>项已核验</span>
+                        <span><b>{failedRuns}</b>项失败</span>
+                        <span><b>{runGroups.length}</b>组运行条件</span>
+                      </div>
+                    </>
+                  )}
 
                   {isExpanded && (
                   <div className="round-section round-runs">
@@ -878,6 +927,8 @@ export function ExperimentCampaignPanel({
                   </div>
                   )}
 
+                  {!dynamicSpec && (
+                  <>
                   {hasMeasuredEffect ? (
                     <div className="round-section round-result">
                       <b>本轮结论</b>
@@ -912,6 +963,8 @@ export function ExperimentCampaignPanel({
                       : "尚未达到最小门槛，当前趋势不能作为最终结论。"}
                     </p>
                   </div>
+                  </>
+                  )}
 
                   {campaign.execution_mode === "parallel" && round.status === "awaiting_guidance" && (
                     <div className="human-guidance-box execution-guidance round-guidance-card">

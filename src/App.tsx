@@ -443,7 +443,13 @@ export default function App() {
       const updated = await api.startNextResearchCycle(project.id, cycleGuidance);
       setProject(updated);
       setCycleGuidance("");
-      setRunNotice("你的建议已记录；AI Scientist 据此生成了下一轮的修订假设。 ");
+      setRunNotice("你的建议已记录；正在生成并评分下一轮修订假设…");
+      // Revision generation intentionally clears the old scores on the
+      // backend. Review the new candidates before showing the ranking gate so
+      // this screen always receives the AI scores for the current cycle.
+      const reviewed = await api.automateIdeation(updated.id);
+      setProject(reviewed);
+      setRunNotice("你的建议已记录；AI Scientist 已生成并完成下一轮修订假设评分。 ");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -617,7 +623,11 @@ export default function App() {
                         objective: researchPrompt,
                         keywords: researchKeywords,
                       });
-                      return api.getProject(created.id);
+                      // Keep the newly created project visible while the
+                      // machine-only discovery pipeline is still running.
+                      setProject(created);
+                      setRunNotice("研究任务已创建，正在检索文献并生成、评分假设…");
+                      return api.automateIdeation(created.id);
                     })
                   }
                 >

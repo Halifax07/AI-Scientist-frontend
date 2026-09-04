@@ -28,6 +28,14 @@ function aiScore(hypothesis: Project["hypotheses"][number]) {
     + 0.1 * score.evidence_strength;
 }
 
+function formatAiScore(hypothesis: Project["hypotheses"][number]): string {
+  return hypothesis.score ? aiScore(hypothesis).toFixed(2) : "等待 AI 评分";
+}
+
+function formatElo(hypothesis: Project["hypotheses"][number]): string {
+  return hypothesis.score ? hypothesis.score.elo.toFixed(0) : "等待评分";
+}
+
 function initialDrafts(project: Project): Record<string, RankingDraft> {
   const ordered = [...project.hypotheses].sort(
     (left, right) => (right.score?.elo ?? 0) - (left.score?.elo ?? 0),
@@ -190,8 +198,8 @@ export function HypothesisRankingPanel({
                 />
               </div>
               <div className="ranking-ai-score">
-                <strong>{hypothesis.score ? aiScore(hypothesis).toFixed(2) : "—"}</strong>
-                <small>系统评分 {hypothesis.score?.elo.toFixed(0) ?? "—"}</small>
+                <strong>{formatAiScore(hypothesis)}</strong>
+                <small>系统评分 {formatElo(hypothesis)}</small>
               </div>
               <input
                 className="ranking-number"

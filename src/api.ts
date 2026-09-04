@@ -67,6 +67,11 @@ export const api = {
       }),
     });
   },
+  /** Run the machine-only discovery pipeline and return scored hypotheses. */
+  automateIdeation: (projectId: string) =>
+    request<Project>(`/api/v1/projects/${projectId}/automation/ideation`, {
+      method: "POST",
+    }),
   /**
    * Legacy helper kept for compatibility with the old FSAD-focused UI.
    * New callers should prefer ``createCustomProject`` with the user's own
@@ -89,9 +94,7 @@ export const api = {
         },
       }),
     });
-    return request<Project>(`/api/v1/projects/${project.id}/automation/ideation`, {
-      method: "POST",
-    });
+    return api.automateIdeation(project.id);
   },
   rankHypotheses: (
     projectId: string,

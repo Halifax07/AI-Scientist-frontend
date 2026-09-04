@@ -8,8 +8,7 @@ import {
 import type { RoundCardPresentationSpec, RoundCardProps, RoundCardSection } from "./types";
 import {
   DynamicRoundCard,
-  isValidDynamicPresentationSpec,
-  safeDynamicPresentationSpec,
+  resolveDynamicPresentationSpec,
 } from "./DynamicRoundCard";
 
 function numberFrom(value: unknown): number | null {
@@ -426,14 +425,13 @@ function LegacyRoundCard({ project, campaign, round }: RoundCardProps) {
 }
 
 export function ExperimentRoundCard(props: RoundCardProps) {
-  if (props.round.design_id) {
-    const presentationSpec = isValidDynamicPresentationSpec(props.round.presentation_spec)
-      ? props.round.presentation_spec
-      : safeDynamicPresentationSpec();
+  const presentationResolution = resolveDynamicPresentationSpec(props.project, props.round);
+  if (presentationResolution.spec) {
     return (
       <DynamicRoundCard
         {...props}
-        round={{ ...props.round, presentation_spec: presentationSpec }}
+        presentationResolution={presentationResolution}
+        round={{ ...props.round, presentation_spec: presentationResolution.spec }}
       />
     );
   }
